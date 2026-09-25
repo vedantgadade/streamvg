@@ -11,3 +11,5 @@ npm run dev
 Production:
 npm run build
 npm start
+
+Production note: browser URL history navigation is handled with the browser History API.
