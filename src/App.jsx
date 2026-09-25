@@ -4,7 +4,7 @@ import dashjs from'dashjs';
 import{Play,Pause,Upload,Maximize,PictureInPicture,Settings,Activity,Repeat2,Camera,History,Trash2,Link2,Code2,Info,Subtitles,Sun,Moon}from'lucide-react';
 import SitePage from './pages.jsx';
 
-const API_BASE=(import.meta.env.VITE_API_BASE_URL||'').replace(/\/$/,'');
+const API_BASE=(import.meta.env.VITE_API_BASE_URL||'https://streamvg-web-production.up.railway.app').replace(/\/$/,'');
 const HIST='streamvg-history';
 const clock=s=>{if(!Number.isFinite(s))return'0:00';const h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=Math.floor(s%60);return(h?String(h).padStart(2,'0')+':':'')+String(m).padStart(2,'0')+':'+String(x).padStart(2,'0')};
 const escUrl=u=>API_BASE+'/api/proxy?url='+encodeURIComponent(u);const isTeraBox=u=>{try{return /(?:^|\\.)terabox(?:\\.app|\\.com|share\\.com|link\\.com|app\\.com)$/i.test(new URL(u).hostname)}catch{return false}};const resolveTeraBox=async u=>{const api='https://terabox-worker.robinkumarshakya103.workers.dev/api?url='+encodeURIComponent(u);const r=await fetch(api);if(!r.ok)throw new Error('TeraBox resolver unavailable');const d=await r.json();const f=(d.files||[]).find(x=>x.streaming_url||x.download_url||x.original_download_url);if(!f)throw new Error('No TeraBox video found');return f.streaming_url||f.download_url||f.original_download_url};
