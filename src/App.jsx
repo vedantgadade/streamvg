@@ -2,10 +2,12 @@ import React,{useEffect,useRef,useState}from'react';
 import Hls from'hls.js';
 import dashjs from'dashjs';
 import{Play,Pause,Upload,Maximize,PictureInPicture,Settings,Activity,Repeat2,Camera,History,Trash2,Link2,Code2,Info,Subtitles,Sun,Moon}from'lucide-react';
+import SitePage from './pages.jsx';
 
+const API_BASE=(import.meta.env.VITE_API_BASE_URL||'').replace(/\/$/,'');
 const HIST='streamvg-history';
 const clock=s=>{if(!Number.isFinite(s))return'0:00';const h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=Math.floor(s%60);return(h?String(h).padStart(2,'0')+':':'')+String(m).padStart(2,'0')+':'+String(x).padStart(2,'0')};
-const escUrl=u=>'/api/proxy?url='+encodeURIComponent(u);const isTeraBox=u=>{try{return /(?:^|\\.)terabox(?:\\.app|\\.com|share\\.com|link\\.com|app\\.com)$/i.test(new URL(u).hostname)}catch{return false}};const resolveTeraBox=async u=>{const api='https://terabox-worker.robinkumarshakya103.workers.dev/api?url='+encodeURIComponent(u);const r=await fetch(api);if(!r.ok)throw new Error('TeraBox resolver unavailable');const d=await r.json();const f=(d.files||[]).find(x=>x.streaming_url||x.download_url||x.original_download_url);if(!f)throw new Error('No TeraBox video found');return f.streaming_url||f.download_url||f.original_download_url};
+const escUrl=u=>API_BASE+'/api/proxy?url='+encodeURIComponent(u);const isTeraBox=u=>{try{return /(?:^|\\.)terabox(?:\\.app|\\.com|share\\.com|link\\.com|app\\.com)$/i.test(new URL(u).hostname)}catch{return false}};const resolveTeraBox=async u=>{const api='https://terabox-worker.robinkumarshakya103.workers.dev/api?url='+encodeURIComponent(u);const r=await fetch(api);if(!r.ok)throw new Error('TeraBox resolver unavailable');const d=await r.json();const f=(d.files||[]).find(x=>x.streaming_url||x.download_url||x.original_download_url);if(!f)throw new Error('No TeraBox video found');return f.streaming_url||f.download_url||f.original_download_url};
 
 export default function App(){
  const video=useRef(null),file=useRef(null),subFile=useRef(null),hls=useRef(null),dash=useRef(null),sleepTimer=useRef(null);
@@ -30,7 +32,7 @@ export default function App(){
  const destroy=()=>{hls.current?.destroy();hls.current=null;if(dash.current){try{dash.current.reset()}catch{}}dash.current=null};
  const addHistory=u=>{let h=[{url:u,host:new URL(u).host,title:u.split('/').pop()||u,at:Date.now()},...history.filter(x=>x.url!==u)].slice(0,15);setHistory(h);localStorage.setItem(HIST,JSON.stringify(h))};
 
- const resolveUrl=async input=>{const direct=/\.(m3u8|mpd|mp4|webm|m4v|mov|ogv|ogg|mkv|ts)(?:[?#]|$)/i.test(input);if(direct)return input;setResolving(true);try{if(isTeraBox(input))return await resolveTeraBox(input);let current=input;const seen=new Set();for(let depth=0;depth<6;depth++){if(seen.has(current))break;seen.add(current);const r=await fetch('/api/resolve?url='+encodeURIComponent(current));const d=await r.json();if(d.kind==='media'&&d.url)return d.url;const next=[...(d.links||[]),...(d.iframes||[])].find(x=>x&&!seen.has(x));if(!next)break;current=next;if(isTeraBox(current))return await resolveTeraBox(current)}throw new Error('No playable media found')}finally{setResolving(false)}};
+ const resolveUrl=async input=>{const direct=/\.(m3u8|mpd|mp4|webm|m4v|mov|ogv|ogg|mkv|ts)(?:[?#]|$)/i.test(input);if(direct)return input;setResolving(true);try{if(isTeraBox(input))return await resolveTeraBox(input);let current=input;const seen=new Set();for(let depth=0;depth<6;depth++){if(seen.has(current))break;seen.add(current);const r=await fetch(API_BASE+'/api/resolve?url='+encodeURIComponent(current));const d=await r.json();if(d.kind==='media'&&d.url)return d.url;const next=[...(d.links||[]),...(d.iframes||[])].find(x=>x&&!seen.has(x));if(!next)break;current=next;if(isTeraBox(current))return await resolveTeraBox(current)}throw new Error('No playable media found')}finally{setResolving(false)}};
  const load=async(input=url,fromHistory=false)=>{
   if(!input)return;try{new URL(input)}catch{alert('Please enter a valid video URL.');return}
   const original=input;let playable=input;
@@ -96,6 +98,6 @@ export default function App(){
     {tab==='history'&&<div className="history">{history.length?history.map(x=><button className="historyItem" key={x.url} onClick={()=>{setUrl(x.url);load(x.url,true)}}><b>{x.host}</b><small>{x.url}</small></button>):<p>No recent streams.</p>}<button className="danger" onClick={()=>{setHistory([]);localStorage.removeItem(HIST)}}><Trash2/> Clear history</button></div>}
    </section>
    <div className="info"><Info/><div><b>About StreamVG</b><p>StreamVG accepts URLs without requiring them to be labeled public. It can only play media that the supplied URL and its available access actually expose; DRM or missing authentication cannot be unlocked by the player.</p></div></div>
-  </main><footer>StreamVG • Free web video player • Use media you have permission to access.</footer>
+  </main><footer>StreamVG • Free web video player • Use media you have permission to access.<nav><a href="/about/">About</a><a href="/faq/">FAQ</a><a href="/privacy/">Privacy</a><a href="/terms/">Terms</a><a href="/copyright/">Copyright</a><a href="/contact/">Contact</a></nav></footer>
  </div>
 }
