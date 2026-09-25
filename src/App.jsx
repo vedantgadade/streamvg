@@ -47,7 +47,7 @@ export default function App(){
   }else{setEngine(input.startsWith('blob:')?'HTML5 Local':'HTML5 Native');v.src=actual}
   v.play().catch(()=>{});if(!input.startsWith('blob:'))addHistory(input);
   if(!fromHistory){const p=Number(localStorage.getItem('streamvg-pos-'+input)||0);if(p>5)setResume(p)}
-  history.pushState({},'',input.startsWith('blob:')?location.pathname:'?url='+encodeURIComponent(input));
+  window.history.pushState({},'',input.startsWith('blob:')?location.pathname:'?url='+encodeURIComponent(input));
  };
 
  const localPlay=f=>{if(!f)return;destroy();const u=URL.createObjectURL(f);setUrl('');setSource(u);setEngine('HTML5 Local');video.current.src=u;video.current.play().catch(()=>{})};
