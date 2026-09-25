@@ -42,10 +42,21 @@ export default function App(){
     x.loadSource(actual);x.attachMedia(v);
    }else if(v.canPlayType('application/vnd.apple.mpegurl'))v.src=actual;else{alert('HLS is not supported by this browser.');return}
   }else if(low.includes('.mpd')){
-   setEngine('DASH.js');const d=dashjs.MediaPlayer().create();dash.current=d;d.initialize(v,actual,true);
-   d.on(dashjs.MediaPlayer.events.QUALITY_CHANGE_RENDERED,e=>{const q=d.getBitrateInfoListFor('video')[e.newQuality];if(q)setStats(s=>({...s,resolution:q.width+'×'+q.height,bitrate:((q.bitrate||0)/1000000).toFixed(2)+' Mbps'}))});
-  }else{setEngine(input.startsWith('blob:')?'HTML5 Local':'HTML5 Native');v.src=actual}
-  v.play().catch(()=>{});if(!input.startsWith('blob:'))addHistory(input);
+   setEngine('DASH.js');
+   const d=dashjs.MediaPlayer().create();dash.current=d;
+   const onDashReady=()=>{try{
+    const reps=d.getRepresentationsByType('video')||[];
+    setLevels(reps.map((r,i)=>({i,height:r.height,width:r.width,bitrate:r.bandwidth||((r.bitrateInKbit||0)*1000),codec:r.codecs||r.codec||'—'})));
+    const cur=d.getCurrentRepresentationForType('video');
+    if(cur){const i=reps.findIndex(r=>r.id===cur.id);setLevel(i>=0?i:-1);setStats(s=>({...s,resolution:cur.width&&cur.height?(cur.width+'×'+cur.height):s.resolution,bitrate:cur.bandwidth?((cur.bandwidth/1000000).toFixed(2)+' Mbps'):s.bitrate,codec:cur.codecs||cur.codec||s.codec}))}
+    setTimeout(()=>v.play().catch(()=>{}),0);
+   }catch(err){console.error(err)}};
+   d.on(dashjs.MediaPlayer.events.STREAM_INITIALIZED,onDashReady);
+   d.on(dashjs.MediaPlayer.events.QUALITY_CHANGE_RENDERED,e=>{try{const reps=d.getRepresentationsByType('video')||[];const q=reps[e.newQuality];if(q)setStats(s=>({...s,resolution:q.width&&q.height?(q.width+'×'+q.height):s.resolution,bitrate:q.bandwidth?((q.bandwidth/1000000).toFixed(2)+' Mbps'):s.bitrate,codec:q.codecs||q.codec||s.codec}))}catch{}});
+   d.on(dashjs.MediaPlayer.events.ERROR,e=>{console.error('DASH error',e);setEngine('DASH.js • Error')});
+   try{d.initialize(v,actual,false)}catch(err){console.error(err);setEngine('DASH.js • Error');alert('DASH could not be loaded. The stream may be unsupported or unavailable.')}
+  }else{setEngine(input.startsWith('blob:')?'HTML5 Local':'HTML5 Native');v.src=actual;v.play().catch(()=>{})}
+  if(!input.startsWith('blob:'))addHistory(input);
   if(!fromHistory){const p=Number(localStorage.getItem('streamvg-pos-'+input)||0);if(p>5)setResume(p)}
   window.history.pushState({},'',input.startsWith('blob:')?location.pathname:'?url='+encodeURIComponent(input));
  };
@@ -69,7 +80,7 @@ export default function App(){
    {resume!=null&&<div className="resume">Resume from {clock(resume)}? <button onClick={()=>{video.current.currentTime=resume;setResume(null)}}>Resume</button><button onClick={()=>setResume(null)}>Dismiss</button></div>}
    <section className="grid">
     <div className="panel"><div className="panelHead"><h2><Settings/> Quality & Tools</h2><span>{engine||'Waiting'}</span></div>
-     <select value={level} onChange={e=>{let x=Number(e.target.value);setLevel(x);if(hls.current)hls.current.currentLevel=x}}><option value="-1">Auto (ABR)</option>{levels.map(l=><option key={l.i} value={l.i}>{l.height?l.height+'p':'Unknown'}{l.bitrate?' — '+(l.bitrate/1000000).toFixed(2)+' Mbps':''}</option>)}</select>
+     <select value={level} onChange={e=>{let x=Number(e.target.value);setLevel(x);if(hls.current)hls.current.currentLevel=x;else if(dash.current){try{if(x<0)dash.current.updateSettings({streaming:{abr:{autoSwitchBitrate:{video:true}}}});else{dash.current.updateSettings({streaming:{abr:{autoSwitchBitrate:{video:false}}}});dash.current.setRepresentationForTypeByIndex('video',x,true)}}catch(err){console.error(err)}}}}><option value="-1">Auto (ABR)</option>{levels.map(l=><option key={l.i} value={l.i}>{l.height?l.height+'p':'Unknown'}{l.bitrate?' — '+(l.bitrate/1000000).toFixed(2)+' Mbps':''}</option>)}</select>
      <div className="tools"><button onClick={()=>setLoop({...loop,a:time})}><Repeat2/> Set A</button><button onClick={()=>setLoop({...loop,b:time})}>Set B</button><button onClick={()=>setLoop({a:null,b:null})}>Clear Loop</button></div>
      <div className="tools"><select value={sleep} onChange={e=>sleepChange(e.target.value)}><option>Off</option><option value="15">Sleep 15m</option><option value="30">Sleep 30m</option><option value="60">Sleep 60m</option></select><button onClick={()=>subFile.current?.click()}><Subtitles/> Add subtitles</button><input ref={subFile} hidden type="file" accept=".srt,.vtt" onChange={e=>addSubtitle(e.target.files[0])}/></div>
     </div>
