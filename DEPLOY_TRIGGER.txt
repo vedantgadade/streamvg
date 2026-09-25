@@ -1,1 +1,2 @@
 Latest StreamVG DASH rendition/bitrate fixes are ready for deployment.
+Deployment trigger refreshed: 2026-09-25T18:10Z
