@@ -1,0 +1,86 @@
+import React,{useEffect,useRef,useState}from'react';
+import Hls from'hls.js';
+import dashjs from'dashjs';
+import{Play,Pause,Upload,Maximize,PictureInPicture,Settings,Activity,Repeat2,Camera,History,Trash2,Link2,Code2,Info,Subtitles,Sun,Moon}from'lucide-react';
+
+const HIST='streamvg-history';
+const clock=s=>{if(!Number.isFinite(s))return'0:00';const h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=Math.floor(s%60);return(h?String(h).padStart(2,'0')+':':'')+String(m).padStart(2,'0')+':'+String(x).padStart(2,'0')};
+const escUrl=u=>'/api/proxy?url='+encodeURIComponent(u);
+
+export default function App(){
+ const video=useRef(null),file=useRef(null),subFile=useRef(null),hls=useRef(null),dash=useRef(null),sleepTimer=useRef(null);
+ const [url,setUrl]=useState(new URLSearchParams(location.search).get('url')||'');
+ const [source,setSource]=useState(''),[engine,setEngine]=useState(''),[playing,setPlaying]=useState(false);
+ const [time,setTime]=useState(0),[duration,setDuration]=useState(0),[levels,setLevels]=useState([]),[level,setLevel]=useState(-1);
+ const [proxy,setProxy]=useState(false),[speed,setSpeed]=useState(1),[loop,setLoop]=useState({a:null,b:null});
+ const [sleep,setSleep]=useState('Off'),[subtitle,setSubtitle]=useState(''),[tab,setTab]=useState('share'),[dark,setDark]=useState(true);
+ const [history,setHistory]=useState(()=>{try{return JSON.parse(localStorage.getItem(HIST)||'[]')}catch{return[]}});
+ const [stats,setStats]=useState({resolution:'—',bitrate:'—',bandwidth:'—',buffer:'0.0s',dropped:0,codec:'—'});
+ const [resume,setResume]=useState(null);
+
+ useEffect(()=>{document.documentElement.dataset.theme=dark?'dark':'light'},[dark]);
+ useEffect(()=>{const v=video.current;if(!v)return;
+  const timeUpdate=()=>{setTime(v.currentTime);if(source)localStorage.setItem('streamvg-pos-'+source,String(v.currentTime));if(loop.a!=null&&loop.b!=null&&v.currentTime>=loop.b)v.currentTime=loop.a};
+  const meta=()=>setDuration(v.duration||0);const play=()=>setPlaying(true);const pause=()=>setPlaying(false);
+  v.addEventListener('timeupdate',timeUpdate);v.addEventListener('loadedmetadata',meta);v.addEventListener('play',play);v.addEventListener('pause',pause);
+  return()=>{v.removeEventListener('timeupdate',timeUpdate);v.removeEventListener('loadedmetadata',meta);v.removeEventListener('play',play);v.removeEventListener('pause',pause)}
+ },[source,loop]);
+ useEffect(()=>{const id=setInterval(()=>{const v=video.current;if(!v)return;let b=0;if(v.buffered.length)b=Math.max(0,v.buffered.end(v.buffered.length-1)-v.currentTime);const q=v.getVideoPlaybackQuality?.();setStats(s=>({...s,buffer:b.toFixed(1)+'s',dropped:q?.droppedVideoFrames??s.dropped,resolution:v.videoWidth?(v.videoWidth+'×'+v.videoHeight):s.resolution}))},1000);return()=>clearInterval(id)},[]);
+
+ const destroy=()=>{hls.current?.destroy();hls.current=null;if(dash.current){try{dash.current.reset()}catch{}}dash.current=null};
+ const addHistory=u=>{let h=[{url:u,host:new URL(u).host,title:u.split('/').pop()||u,at:Date.now()},...history.filter(x=>x.url!==u)].slice(0,15);setHistory(h);localStorage.setItem(HIST,JSON.stringify(h))};
+
+ const load=(input=url,fromHistory=false)=>{
+  if(!input)return;try{new URL(input)}catch{alert('Please enter a valid video URL.');return}
+  destroy();setSource(input);setLevels([]);setLevel(-1);setResume(null);
+  const v=video.current;const actual=proxy?escUrl(input):input;const low=input.toLowerCase();
+  if(low.includes('.m3u8')){
+   setEngine('HLS.js');
+   if(Hls.isSupported()){const x=new Hls({enableWorker:true});hls.current=x;
+    x.on(Hls.Events.MANIFEST_PARSED,(_,d)=>setLevels(d.levels.map((l,i)=>({i,height:l.height,width:l.width,bitrate:l.bitrate,codec:l.videoCodec||l.codecs||'—'}))));
+    x.on(Hls.Events.LEVEL_SWITCHED,(_,d)=>{const l=x.levels[d.level];setLevel(d.level);setStats(s=>({...s,resolution:l?.width?(l.width+'×'+l.height):s.resolution,bitrate:l?.bitrate?((l.bitrate/1000000).toFixed(2)+' Mbps'):s.bitrate,bandwidth:x.bandwidthEstimate?((x.bandwidthEstimate/1000000).toFixed(2)+' Mbps'):s.bandwidth,codec:l?.videoCodec||l?.codecs||s.codec}))});
+    x.loadSource(actual);x.attachMedia(v);
+   }else if(v.canPlayType('application/vnd.apple.mpegurl'))v.src=actual;else{alert('HLS is not supported by this browser.');return}
+  }else if(low.includes('.mpd')){
+   setEngine('DASH.js');const d=dashjs.MediaPlayer().create();dash.current=d;d.initialize(v,actual,true);
+   d.on(dashjs.MediaPlayer.events.QUALITY_CHANGE_RENDERED,e=>{const q=d.getBitrateInfoListFor('video')[e.newQuality];if(q)setStats(s=>({...s,resolution:q.width+'×'+q.height,bitrate:((q.bitrate||0)/1000000).toFixed(2)+' Mbps'}))});
+  }else{setEngine(input.startsWith('blob:')?'HTML5 Local':'HTML5 Native');v.src=actual}
+  v.play().catch(()=>{});if(!input.startsWith('blob:'))addHistory(input);
+  if(!fromHistory){const p=Number(localStorage.getItem('streamvg-pos-'+input)||0);if(p>5)setResume(p)}
+  history.pushState({},'',input.startsWith('blob:')?location.pathname:'?url='+encodeURIComponent(input));
+ };
+
+ const localPlay=f=>{if(!f)return;destroy();const u=URL.createObjectURL(f);setUrl('');setSource(u);setEngine('HTML5 Local');video.current.src=u;video.current.play().catch(()=>{})};
+ const addSubtitle=f=>{if(!f)return;const r=new FileReader();r.onload=()=>{let t=String(r.result).replace(/\r/g,'');if(f.name.toLowerCase().endsWith('.srt')){t='WEBVTT\\n\\n'+t.replace(/(\\d{2}:\\d{2}:\\d{2}),(\\d{3})/g,'$1.$2').replace(/^\\d+\\s*\\n/gm,'')}const b=new Blob([t],{type:'text/vtt'});setSubtitle(URL.createObjectURL(b))};r.readAsText(f)};
+ const screenshot=()=>{const v=video.current;if(!v.videoWidth)return;const c=document.createElement('canvas');c.width=v.videoWidth;c.height=v.videoHeight;c.getContext('2d').drawImage(v,0,0);const a=document.createElement('a');a.href=c.toDataURL('image/png');a.download='streamvg-screenshot.png';a.click()};
+ const sleepChange=x=>{setSleep(x);clearTimeout(sleepTimer.current);if(x!=='Off')sleepTimer.current=setTimeout(()=>video.current?.pause(),Number(x)*60000)};
+ const share=location.origin+'/?url='+encodeURIComponent(source);
+
+ return <div className="app">
+  <header><div className="brand"><span>SV</span><div><b>StreamVG</b><small>Video Player & Stream Analyzer</small></div></div><button className="icon" onClick={()=>setDark(!dark)}>{dark?<Sun/>:<Moon/>}</button></header>
+  <main>
+   <section className="hero"><h1>Play. Analyze. Control.</h1><p>Free player for direct video, HLS and DASH streams.</p>
+    <div className="inputRow"><input value={url} onChange={e=>setUrl(e.target.value)} onKeyDown={e=>e.key==='Enter'&&load()} placeholder="Paste MP4, WebM, .m3u8 or .mpd URL"/><button className="primary" onClick={()=>load()}><Play/> Play</button><button className="secondary" onClick={()=>file.current?.click()}><Upload/> Local</button><input ref={file} hidden type="file" accept="video/*" onChange={e=>localPlay(e.target.files[0])}/></div>
+    <label className="toggle"><input type="checkbox" checked={proxy} onChange={e=>setProxy(e.target.checked)}/><span/>Use CORS proxy for public streams</label>
+   </section>
+   <section className="playerCard"><div className="videoWrap"><video ref={video} controls playsInline>{subtitle&&<track kind="subtitles" src={subtitle} default/>}</video></div>
+    <div className="controls"><button onClick={()=>playing?video.current.pause():video.current.play()}>{playing?<Pause/>:<Play/>}</button><span>{clock(time)} / {clock(duration)}</span><input className="seek" type="range" min="0" max={duration||0} step=".1" value={time} onChange={e=>video.current.currentTime=Number(e.target.value)}/><select value={speed} onChange={e=>{let x=Number(e.target.value);setSpeed(x);video.current.playbackRate=x}}>{[.25,.5,.75,1,1.25,1.5,2,4,8,16].map(x=><option key={x} value={x}>{x}×</option>)}</select><button onClick={screenshot}><Camera/></button><button onClick={()=>video.current.requestPictureInPicture?.()}><PictureInPicture/></button><button onClick={()=>video.current.requestFullscreen?.()}><Maximize/></button></div>
+   </section>
+   {resume!=null&&<div className="resume">Resume from {clock(resume)}? <button onClick={()=>{video.current.currentTime=resume;setResume(null)}}>Resume</button><button onClick={()=>setResume(null)}>Dismiss</button></div>}
+   <section className="grid">
+    <div className="panel"><div className="panelHead"><h2><Settings/> Quality & Tools</h2><span>{engine||'Waiting'}</span></div>
+     <select value={level} onChange={e=>{let x=Number(e.target.value);setLevel(x);if(hls.current)hls.current.currentLevel=x}}><option value="-1">Auto (ABR)</option>{levels.map(l=><option key={l.i} value={l.i}>{l.height?l.height+'p':'Unknown'}{l.bitrate?' — '+(l.bitrate/1000000).toFixed(2)+' Mbps':''}</option>)}</select>
+     <div className="tools"><button onClick={()=>setLoop({...loop,a:time})}><Repeat2/> Set A</button><button onClick={()=>setLoop({...loop,b:time})}>Set B</button><button onClick={()=>setLoop({a:null,b:null})}>Clear Loop</button></div>
+     <div className="tools"><select value={sleep} onChange={e=>sleepChange(e.target.value)}><option>Off</option><option value="15">Sleep 15m</option><option value="30">Sleep 30m</option><option value="60">Sleep 60m</option></select><button onClick={()=>subFile.current?.click()}><Subtitles/> Add subtitles</button><input ref={subFile} hidden type="file" accept=".srt,.vtt" onChange={e=>addSubtitle(e.target.files[0])}/></div>
+    </div>
+    <div className="panel"><div className="panelHead"><h2><Activity/> Live Diagnostics</h2></div><div className="stats">{[['resolution','Resolution'],['bitrate','Bitrate'],['bandwidth','Bandwidth'],['buffer','Buffer'],['dropped','Dropped frames'],['codec','Codec']].map(a=><div key={a[0]}><b>{stats[a[0]]}</b><small>{a[1]}</small></div>)}</div></div>
+   </section>
+   <section className="panel wide"><div className="tabs"><button className={tab==='share'?'active':''} onClick={()=>setTab('share')}><Link2/> Share</button><button className={tab==='code'?'active':''} onClick={()=>setTab('code')}><Code2/> Embed</button><button className={tab==='history'?'active':''} onClick={()=>setTab('history')}><History/> History</button></div>
+    {tab==='share'&&<div className="shareBox"><input readOnly value={source?share:''}/><button onClick={()=>source&&navigator.clipboard?.writeText(share)}>Copy</button></div>}
+    {tab==='code'&&<pre>{source?'<iframe src="'+share+'" width="100%" height="500" allow="autoplay; fullscreen; picture-in-picture"></iframe>':'Play a stream first.'}</pre>}
+    {tab==='history'&&<div className="history">{history.length?history.map(x=><button className="historyItem" key={x.url} onClick={()=>{setUrl(x.url);load(x.url,true)}}><b>{x.host}</b><small>{x.url}</small></button>):<p>No recent streams.</p>}<button className="danger" onClick={()=>{setHistory([]);localStorage.removeItem(HIST)}}><Trash2/> Clear history</button></div>}
+   </section>
+   <div className="info"><Info/><div><b>About StreamVG</b><p>4K is available only when the original source provides a 4K rendition. StreamVG does not bypass DRM or private access controls.</p></div></div>
+  </main><footer>StreamVG • Free web video player • Use media you have permission to access.</footer>
+ </div>
+}
