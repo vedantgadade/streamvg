@@ -1,6 +1,5 @@
 import React,{useEffect,useRef,useState}from'react';
-import Hls from'hls.js';
-import dashjs from'dashjs';
+let HlsLib=null;let dashLib=null;
 import{Play,Pause,Upload,Maximize,PictureInPicture,Settings,Activity,Repeat2,Camera,History,Trash2,Link2,Code2,Info,Subtitles,Sun,Moon}from'lucide-react';
 import SitePage from './pages.jsx';
 
@@ -41,6 +40,7 @@ export default function App(){
   const v=video.current;const actual=proxy?escUrl(playable):playable;const low=playable.toLowerCase();
   if(low.includes('.m3u8')){
    setEngine('HLS.js');
+   const Hls=HlsLib||(HlsLib=(await import('hls.js')).default);
    if(Hls.isSupported()){const x=new Hls({enableWorker:true});hls.current=x;
     x.on(Hls.Events.MANIFEST_PARSED,(_,d)=>setLevels(d.levels.map((l,i)=>({i,height:l.height,width:l.width,bitrate:l.bitrate,codec:l.videoCodec||l.codecs||'—'}))));
     x.on(Hls.Events.LEVEL_SWITCHED,(_,d)=>{const l=x.levels[d.level];setLevel(d.level);setStats(s=>({...s,resolution:l?.width?(l.width+'×'+l.height):s.resolution,bitrate:l?.bitrate?((l.bitrate/1000000).toFixed(2)+' Mbps'):s.bitrate,bandwidth:x.bandwidthEstimate?((x.bandwidthEstimate/1000000).toFixed(2)+' Mbps'):s.bandwidth,codec:l?.videoCodec||l?.codecs||s.codec}))});
@@ -48,6 +48,7 @@ export default function App(){
    }else if(v.canPlayType('application/vnd.apple.mpegurl'))v.src=actual;else{alert('HLS is not supported by this browser.');return}
   }else if(low.includes('.mpd')){
    setEngine('DASH.js');
+   const dashjs=dashLib||(dashLib=(await import('dashjs')).default);
    const d=dashjs.MediaPlayer().create();dash.current=d;
    const readDash=()=>{try{
     const reps=d.getRepresentationsByTypeUnfiltered?.('video')||d.getRepresentationsByType('video')||[];
