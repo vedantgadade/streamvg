@@ -1,2 +1,3 @@
 Latest StreamVG DASH rendition/bitrate fixes are ready for deployment.
 Deployment trigger refreshed: 2026-09-25T18:10Z
+Auto-deploy trigger after Railway GitHub App reconnect: 2026-09-25T18:14Z
