@@ -10,7 +10,7 @@ const escUrl=u=>'/api/proxy?url='+encodeURIComponent(u);
 export default function App(){
  const video=useRef(null),file=useRef(null),subFile=useRef(null),hls=useRef(null),dash=useRef(null),sleepTimer=useRef(null);
  const [url,setUrl]=useState(new URLSearchParams(location.search).get('url')||'');
- const [source,setSource]=useState(''),[engine,setEngine]=useState(''),[playing,setPlaying]=useState(false);
+ const [source,setSource]=useState(''),[engine,setEngine]=useState(''),[playing,setPlaying]=useState(false),[resolving,setResolving]=useState(false);
  const [time,setTime]=useState(0),[duration,setDuration]=useState(0),[levels,setLevels]=useState([]),[level,setLevel]=useState(-1);
  const [proxy,setProxy]=useState(false),[speed,setSpeed]=useState(1),[loop,setLoop]=useState({a:null,b:null});
  const [sleep,setSleep]=useState('Off'),[subtitle,setSubtitle]=useState(''),[tab,setTab]=useState('share'),[codeType,setCodeType]=useState('iframe'),[theater,setTheater]=useState(false),[dark,setDark]=useState(true);
@@ -30,10 +30,13 @@ export default function App(){
  const destroy=()=>{hls.current?.destroy();hls.current=null;if(dash.current){try{dash.current.reset()}catch{}}dash.current=null};
  const addHistory=u=>{let h=[{url:u,host:new URL(u).host,title:u.split('/').pop()||u,at:Date.now()},...history.filter(x=>x.url!==u)].slice(0,15);setHistory(h);localStorage.setItem(HIST,JSON.stringify(h))};
 
- const load=(input=url,fromHistory=false)=>{
+ const resolveUrl=async input=>{const direct=/\\.(m3u8|mpd|mp4|webm|m4v|mov|ogv|ogg)(?:[?#]|$)/i.test(input);if(direct)return input;setResolving(true);try{let current=input;for(let depth=0;depth<3;depth++){const r=await fetch('/api/resolve?url='+encodeURIComponent(current));const d=await r.json();if(d.kind==='media'&&d.url)return d.url;const next=(d.iframes||[])[0];if(!next)break;current=next}throw new Error('No playable media found')}finally{setResolving(false)}};
+ const load=async(input=url,fromHistory=false)=>{
   if(!input)return;try{new URL(input)}catch{alert('Please enter a valid video URL.');return}
-  destroy();setSource(input);setLevels([]);setLevel(-1);setResume(null);
-  const v=video.current;const actual=proxy?escUrl(input):input;const low=input.toLowerCase();
+  const original=input;let playable=input;
+  try{playable=await resolveUrl(input)}catch{setEngine('Resolver • No playable media found');alert('This URL was opened, but StreamVG could not find a directly playable video in it. Some sites require login, DRM, or JavaScript-only playback.');return}
+  destroy();setSource(original);setLevels([]);setLevel(-1);setResume(null);
+  const v=video.current;const actual=proxy?escUrl(playable):playable;const low=playable.toLowerCase();
   if(low.includes('.m3u8')){
    setEngine('HLS.js');
    if(Hls.isSupported()){const x=new Hls({enableWorker:true});hls.current=x;
@@ -56,9 +59,9 @@ export default function App(){
    d.on(dashjs.MediaPlayer.events.ERROR,e=>{console.error('DASH error',e);setEngine('DASH.js • Error')});
    try{d.initialize(v,actual,false)}catch(err){console.error(err);setEngine('DASH.js • Error');alert('DASH could not be loaded. The stream may be unsupported or unavailable.')}
   }else{setEngine(input.startsWith('blob:')?'HTML5 Local':'HTML5 Native');v.src=actual;v.play().catch(()=>{})}
-  if(!input.startsWith('blob:'))addHistory(input);
+  if(!original.startsWith('blob:'))addHistory(original);
   if(!fromHistory){const p=Number(localStorage.getItem('streamvg-pos-'+input)||0);if(p>5)setResume(p)}
-  window.history.pushState({},'',input.startsWith('blob:')?location.pathname:'?url='+encodeURIComponent(input));
+  window.history.pushState({},'',original.startsWith('blob:')?location.pathname:'?url='+encodeURIComponent(original));
  };
 
  const localPlay=f=>{if(!f)return;destroy();const u=URL.createObjectURL(f);setUrl('');setSource(u);setEngine('HTML5 Local');video.current.src=u;video.current.play().catch(()=>{})};
@@ -71,8 +74,8 @@ export default function App(){
  return <div className="app">
   <header><div className="brand"><span>SV</span><div><b>StreamVG</b><small>Video Player & Stream Analyzer</small></div></div><button className="icon" onClick={()=>setDark(!dark)}>{dark?<Sun/>:<Moon/>}</button></header>
   <main>
-   <section className="hero"><h1>Play. Analyze. Control.</h1><p>Free player for direct video, HLS and DASH streams.</p>
-    <div className="inputRow"><input value={url} onChange={e=>setUrl(e.target.value)} onKeyDown={e=>e.key==='Enter'&&load()} placeholder="Paste MP4, WebM, .m3u8 or .mpd URL"/><button className="primary" onClick={()=>load()}><Play/> Play</button><button className="secondary" onClick={()=>file.current?.click()}><Upload/> Local</button><input ref={file} hidden type="file" accept="video/*" onChange={e=>localPlay(e.target.files[0])}/></div>
+   <section className="hero"><h1>Play. Analyze. Control.</h1><p>Paste almost any video page URL — StreamVG finds the playable video when the page exposes one.</p>
+    <div className="inputRow"><input value={url} onChange={e=>setUrl(e.target.value)} onKeyDown={e=>e.key==='Enter'&&load()} placeholder="Paste MP4, WebM, .m3u8 or .mpd URL"/><button className="primary" onClick={()=>load()} disabled={resolving}><Play/> {resolving?'Finding video…':'Play'}</button><button className="secondary" onClick={()=>file.current?.click()}><Upload/> Local</button><input ref={file} hidden type="file" accept="video/*" onChange={e=>localPlay(e.target.files[0])}/></div>
     <label className="toggle"><input type="checkbox" checked={proxy} onChange={e=>setProxy(e.target.checked)}/><span/>Use CORS proxy for public streams</label>
    </section>
    <section className={'playerCard'+(theater?' theater':'')}><div className="videoWrap"><video ref={video} controls playsInline>{subtitle&&<track kind="subtitles" src={subtitle} default/>}</video></div>
