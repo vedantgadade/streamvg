@@ -30,7 +30,7 @@ export default function App(){
  const destroy=()=>{hls.current?.destroy();hls.current=null;if(dash.current){try{dash.current.reset()}catch{}}dash.current=null};
  const addHistory=u=>{let h=[{url:u,host:new URL(u).host,title:u.split('/').pop()||u,at:Date.now()},...history.filter(x=>x.url!==u)].slice(0,15);setHistory(h);localStorage.setItem(HIST,JSON.stringify(h))};
 
- const resolveUrl=async input=>{const direct=/\\.(m3u8|mpd|mp4|webm|m4v|mov|ogv|ogg)(?:[?#]|$)/i.test(input);if(direct)return input;setResolving(true);try{let current=input;for(let depth=0;depth<3;depth++){const r=await fetch('/api/resolve?url='+encodeURIComponent(current));const d=await r.json();if(d.kind==='media'&&d.url)return d.url;const next=(d.iframes||[])[0];if(!next)break;current=next}throw new Error('No playable media found')}finally{setResolving(false)}};
+ const resolveUrl=async input=>{const direct=/\.(m3u8|mpd|mp4|webm|m4v|mov|ogv|ogg)(?:[?#]|$)/i.test(input);if(direct)return input;setResolving(true);try{let current=input;for(let depth=0;depth<3;depth++){const r=await fetch('/api/resolve?url='+encodeURIComponent(current));const d=await r.json();if(d.kind==='media'&&d.url)return d.url;const next=(d.iframes||[])[0];if(!next)break;current=next}throw new Error('No playable media found')}finally{setResolving(false)}};
  const load=async(input=url,fromHistory=false)=>{
   if(!input)return;try{new URL(input)}catch{alert('Please enter a valid video URL.');return}
   const original=input;let playable=input;
