@@ -44,15 +44,15 @@ export default function App(){
   }else if(low.includes('.mpd')){
    setEngine('DASH.js');
    const d=dashjs.MediaPlayer().create();dash.current=d;
-   const onDashReady=()=>{try{
-    const reps=d.getRepresentationsByType('video')||[];
-    setLevels(reps.map((r,i)=>({i,height:r.height,width:r.width,bitrate:r.bandwidth||((r.bitrateInKbit||0)*1000),codec:r.codecs||r.codec||'—'})));
+   const readDash=()=>{try{
+    const reps=d.getRepresentationsByTypeUnfiltered?.('video')||d.getRepresentationsByType('video')||[];
+    setLevels(reps.map((r,i)=>({i,height:r.height,width:r.width,bitrate:r.bitrateInKbit?Math.round(r.bitrateInKbit*1000):(r.bandwidth||0),codec:r.codecs||r.codec||'—'})));
     const cur=d.getCurrentRepresentationForType('video');
-    if(cur){const i=reps.findIndex(r=>r.id===cur.id);setLevel(i>=0?i:-1);setStats(s=>({...s,resolution:cur.width&&cur.height?(cur.width+'×'+cur.height):s.resolution,bitrate:cur.bandwidth?((cur.bandwidth/1000000).toFixed(2)+' Mbps'):s.bitrate,codec:cur.codecs||cur.codec||s.codec}))}
-    setTimeout(()=>v.play().catch(()=>{}),0);
-   }catch(err){console.error(err)}};
+    if(cur){const i=reps.findIndex(r=>r.id===cur.id);setLevel(i>=0?i:-1);setStats(s=>({...s,resolution:cur.width&&cur.height?(cur.width+'×'+cur.height):s.resolution,bitrate:cur.bitrateInKbit?((cur.bitrateInKbit/1000).toFixed(2)+' Mbps'):cur.bandwidth?((cur.bandwidth/1000000).toFixed(2)+' Mbps'):s.bitrate,codec:cur.codecs||cur.codec||s.codec}))}
+   }catch(err){console.error('DASH representation read error',err)}};
+   const onDashReady=()=>{readDash();setTimeout(readDash,500);setTimeout(()=>v.play().catch(()=>{}),0)};
    d.on(dashjs.MediaPlayer.events.STREAM_INITIALIZED,onDashReady);
-   d.on(dashjs.MediaPlayer.events.QUALITY_CHANGE_RENDERED,e=>{try{const reps=d.getRepresentationsByType('video')||[];const q=reps[e.newQuality];if(q)setStats(s=>({...s,resolution:q.width&&q.height?(q.width+'×'+q.height):s.resolution,bitrate:q.bandwidth?((q.bandwidth/1000000).toFixed(2)+' Mbps'):s.bitrate,codec:q.codecs||q.codec||s.codec}))}catch{}});
+   d.on(dashjs.MediaPlayer.events.QUALITY_CHANGE_RENDERED,()=>{readDash()});
    d.on(dashjs.MediaPlayer.events.ERROR,e=>{console.error('DASH error',e);setEngine('DASH.js • Error')});
    try{d.initialize(v,actual,false)}catch(err){console.error(err);setEngine('DASH.js • Error');alert('DASH could not be loaded. The stream may be unsupported or unavailable.')}
   }else{setEngine(input.startsWith('blob:')?'HTML5 Local':'HTML5 Native');v.src=actual;v.play().catch(()=>{})}
