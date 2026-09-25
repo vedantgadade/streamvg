@@ -1,0 +1,9 @@
+{
+  "name":"streamvg",
+  "version":"1.0.0",
+  "private":true,
+  "type":"module",
+  "scripts":{"dev":"vite","build":"vite build","start":"node server/index.js","preview":"vite preview"},
+  "dependencies":{"@vitejs/plugin-react":"latest","express":"latest","hls.js":"latest","dashjs":"latest","lucide-react":"latest","react":"latest","react-dom":"latest"},
+  "devDependencies":{"vite":"latest"}
+}
