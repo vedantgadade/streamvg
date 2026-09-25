@@ -5,7 +5,7 @@ import{Play,Pause,Upload,Maximize,PictureInPicture,Settings,Activity,Repeat2,Cam
 
 const HIST='streamvg-history';
 const clock=s=>{if(!Number.isFinite(s))return'0:00';const h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=Math.floor(s%60);return(h?String(h).padStart(2,'0')+':':'')+String(m).padStart(2,'0')+':'+String(x).padStart(2,'0')};
-const escUrl=u=>'/api/proxy?url='+encodeURIComponent(u);
+const escUrl=u=>'/api/proxy?url='+encodeURIComponent(u);const isTeraBox=u=>{try{return /(?:^|\\.)terabox(?:\\.app|\\.com|share\\.com|link\\.com|app\\.com)$/i.test(new URL(u).hostname)}catch{return false}};const resolveTeraBox=async u=>{const api='https://terabox-worker.robinkumarshakya103.workers.dev/api?url='+encodeURIComponent(u);const r=await fetch(api);if(!r.ok)throw new Error('TeraBox resolver unavailable');const d=await r.json();const f=(d.files||[]).find(x=>x.streaming_url||x.download_url||x.original_download_url);if(!f)throw new Error('No TeraBox video found');return f.streaming_url||f.download_url||f.original_download_url};
 
 export default function App(){
  const video=useRef(null),file=useRef(null),subFile=useRef(null),hls=useRef(null),dash=useRef(null),sleepTimer=useRef(null);
@@ -30,7 +30,7 @@ export default function App(){
  const destroy=()=>{hls.current?.destroy();hls.current=null;if(dash.current){try{dash.current.reset()}catch{}}dash.current=null};
  const addHistory=u=>{let h=[{url:u,host:new URL(u).host,title:u.split('/').pop()||u,at:Date.now()},...history.filter(x=>x.url!==u)].slice(0,15);setHistory(h);localStorage.setItem(HIST,JSON.stringify(h))};
 
- const resolveUrl=async input=>{const direct=/\.(m3u8|mpd|mp4|webm|m4v|mov|ogv|ogg)(?:[?#]|$)/i.test(input);if(direct)return input;setResolving(true);try{let current=input;for(let depth=0;depth<3;depth++){const r=await fetch('/api/resolve?url='+encodeURIComponent(current));const d=await r.json();if(d.kind==='media'&&d.url)return d.url;const next=(d.iframes||[])[0];if(!next)break;current=next}throw new Error('No playable media found')}finally{setResolving(false)}};
+ const resolveUrl=async input=>{const direct=/\.(m3u8|mpd|mp4|webm|m4v|mov|ogv|ogg|mkv|ts)(?:[?#]|$)/i.test(input);if(direct)return input;setResolving(true);try{if(isTeraBox(input))return await resolveTeraBox(input);let current=input;const seen=new Set();for(let depth=0;depth<6;depth++){if(seen.has(current))break;seen.add(current);const r=await fetch('/api/resolve?url='+encodeURIComponent(current));const d=await r.json();if(d.kind==='media'&&d.url)return d.url;const next=[...(d.links||[]),...(d.iframes||[])].find(x=>x&&!seen.has(x));if(!next)break;current=next;if(isTeraBox(current))return await resolveTeraBox(current)}throw new Error('No playable media found')}finally{setResolving(false)}};
  const load=async(input=url,fromHistory=false)=>{
   if(!input)return;try{new URL(input)}catch{alert('Please enter a valid video URL.');return}
   const original=input;let playable=input;
@@ -74,9 +74,9 @@ export default function App(){
  return <div className="app">
   <header><div className="brand"><span>SV</span><div><b>StreamVG</b><small>Video Player & Stream Analyzer</small></div></div><button className="icon" onClick={()=>setDark(!dark)}>{dark?<Sun/>:<Moon/>}</button></header>
   <main>
-   <section className="hero"><h1>Play. Analyze. Control.</h1><p>Paste almost any video page URL — StreamVG finds the playable video when the page exposes one.</p>
-    <div className="inputRow"><input value={url} onChange={e=>setUrl(e.target.value)} onKeyDown={e=>e.key==='Enter'&&load()} placeholder="Paste MP4, WebM, .m3u8 or .mpd URL"/><button className="primary" onClick={()=>load()} disabled={resolving}><Play/> {resolving?'Finding video…':'Play'}</button><button className="secondary" onClick={()=>file.current?.click()}><Upload/> Local</button><input ref={file} hidden type="file" accept="video/*" onChange={e=>localPlay(e.target.files[0])}/></div>
-    <label className="toggle"><input type="checkbox" checked={proxy} onChange={e=>setProxy(e.target.checked)}/><span/>Use CORS proxy for public streams</label>
+   <section className="hero"><h1>Play. Analyze. Control.</h1><p>Paste almost any video URL — StreamVG automatically tries direct media, page extraction, embeds, and TeraBox links.</p>
+    <div className="inputRow"><input value={url} onChange={e=>setUrl(e.target.value)} onKeyDown={e=>e.key==='Enter'&&load()} placeholder="Paste any video URL — page, Telegram, TeraBox, MP4, HLS or DASH"/><button className="primary" onClick={()=>load()} disabled={resolving}><Play/> {resolving?'Finding video…':'Play'}</button><button className="secondary" onClick={()=>file.current?.click()}><Upload/> Local</button><input ref={file} hidden type="file" accept="video/*" onChange={e=>localPlay(e.target.files[0])}/></div>
+    <label className="toggle"><input type="checkbox" checked={proxy} onChange={e=>setProxy(e.target.checked)}/><span/>Use CORS proxy</label>
    </section>
    <section className={'playerCard'+(theater?' theater':'')}><div className="videoWrap"><video ref={video} controls playsInline>{subtitle&&<track kind="subtitles" src={subtitle} default/>}</video></div>
     <div className="controls"><button onClick={()=>playing?video.current.pause():video.current.play()}>{playing?<Pause/>:<Play/>}</button><span>{clock(time)} / {clock(duration)}</span><input className="seek" type="range" min="0" max={duration||0} step=".1" value={time} onChange={e=>video.current.currentTime=Number(e.target.value)}/><select value={speed} onChange={e=>{let x=Number(e.target.value);setSpeed(x);video.current.playbackRate=x}}>{[.25,.5,.75,1,1.25,1.5,2,4,8,16].map(x=><option key={x} value={x}>{x}×</option>)}</select><button onClick={screenshot}><Camera/></button><button onClick={()=>video.current.requestPictureInPicture?.()}><PictureInPicture/></button><button onClick={()=>video.current.requestFullscreen?.()}><Maximize/></button><button onClick={()=>setTheater(!theater)} title="Theater mode">▣</button></div>
@@ -95,7 +95,7 @@ export default function App(){
     {tab==='code'&&<div className="codeTools"><div className="codeTabs"><button className={codeType==='iframe'?'active':''} onClick={()=>setCodeType('iframe')}>iFrame</button><button className={codeType==='hls'?'active':''} onClick={()=>setCodeType('hls')}>HLS.js</button><button className={codeType==='videojs'?'active':''} onClick={()=>setCodeType('videojs')}>Video.js</button><button className={codeType==='ffmpeg'?'active':''} onClick={()=>setCodeType('ffmpeg')}>FFmpeg</button></div><div className="codeActions"><button onClick={()=>navigator.clipboard?.writeText(codeSnippet())}>Copy code</button></div><pre>{codeSnippet()}</pre></div>}
     {tab==='history'&&<div className="history">{history.length?history.map(x=><button className="historyItem" key={x.url} onClick={()=>{setUrl(x.url);load(x.url,true)}}><b>{x.host}</b><small>{x.url}</small></button>):<p>No recent streams.</p>}<button className="danger" onClick={()=>{setHistory([]);localStorage.removeItem(HIST)}}><Trash2/> Clear history</button></div>}
    </section>
-   <div className="info"><Info/><div><b>About StreamVG</b><p>4K is available only when the original source provides a 4K rendition. StreamVG does not bypass DRM or private access controls.</p></div></div>
+   <div className="info"><Info/><div><b>About StreamVG</b><p>StreamVG accepts URLs without requiring them to be labeled public. It can only play media that the supplied URL and its available access actually expose; DRM or missing authentication cannot be unlocked by the player.</p></div></div>
   </main><footer>StreamVG • Free web video player • Use media you have permission to access.</footer>
  </div>
 }
