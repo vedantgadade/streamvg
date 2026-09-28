@@ -50,12 +50,25 @@ const runUniversalExtractor=async target=>{
 
 const resolveTeraExternal=async target=>{
  try{
-  const r=await fetch('https://terabox-worker.robinkumarshakya103.workers.dev/api?url='+encodeURIComponent(target),{headers:{'user-agent':'Mozilla/5.0 StreamVG Resolver'},redirect:'follow'});
-  if(!r.ok)return null;
-  const d=await r.json(),f=d?.files?.find(x=>x?.streaming_url||x?.download_url)||d?.files?.[0];
-  const u=f?.streaming_url||f?.download_url;
-  return u?{kind:'media',url:u,headers:{'user-agent':'Mozilla/5.0 StreamVG Resolver','referer':target},title:f?.name||d?.title||'',width:f?.width,height:f?.height,source:'terabox-resolver'}:null;
- }catch{return null}
+  const headers={'user-agent':'Mozilla/5.0 StreamVG Resolver','accept':'application/json'};
+  const r=await fetch('https://terabox-worker.robinkumarshakya103.workers.dev/api?url='+encodeURIComponent(target),{headers,redirect:'follow'});
+  if(r.ok){
+   const d=await r.json(),f=d?.files?.find(x=>x?.streaming_url||x?.download_url)||d?.files?.[0];
+   const u=f?.streaming_url||f?.download_url;
+   if(u)return{kind:'media',url:u,headers:{'user-agent':'Mozilla/5.0 StreamVG Resolver','referer':target},title:f?.name||d?.title||'',width:f?.width,height:f?.height,source:'terabox-resolver'};
+  }
+ }catch{}
+ try{
+  const u=new URL(target),surl=u.pathname.split('/').filter(Boolean).pop();
+  if(!surl)return null;
+  const p='https://tbx-proxy.shakir-ansarii075.workers.dev/?mode=stream&surl='+encodeURIComponent(surl)+'&type=M3U8_AUTO_720';
+  const r=await fetch(p,{headers:{'user-agent':'Mozilla/5.0 StreamVG Resolver','accept':'application/vnd.apple.mpegurl,*/*'},redirect:'follow'});
+  const type=r.headers.get('content-type')||'';
+  if(r.ok&&(type.includes('mpegurl')||type.includes('m3u8')||type.includes('text/plain'))){
+   return{kind:'media',url:r.url,headers:{'user-agent':'Mozilla/5.0 StreamVG Resolver','referer':target},title:'TeraBox video',source:'terabox-hls-gateway'};
+  }
+ }catch{}
+ return null;
 };
 
 app.get('/api/health',(req,res)=>res.json({ok:true,service:'StreamVG',time:new Date().toISOString()}));
