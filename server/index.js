@@ -61,6 +61,7 @@ const resolveTeraExternal=async target=>{
 app.get('/api/health',(req,res)=>res.json({ok:true,service:'StreamVG',time:new Date().toISOString()}));
 
 app.get('/api/resolve',allowApi,async(req,res)=>{
+ res.setHeader('Cache-Control','no-store, no-cache, max-age=0, must-revalidate');
  try{
   const target=req.query.url;if(!target)return res.status(400).json({error:'Missing url'});
   const u=new URL(target);
@@ -82,6 +83,7 @@ app.get('/api/resolve',allowApi,async(req,res)=>{
 });
 
 app.get('/api/stream/:token',allowApi,async(req,res)=>{
+ res.setHeader('Cache-Control','no-store');
  try{
   const item=relayGet(req.params.token);if(!item)return res.status(410).send('Stream session expired. Resolve the URL again.');
   const target=req.query.url?new URL(req.query.url):new URL(item.url);
