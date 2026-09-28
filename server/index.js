@@ -33,7 +33,8 @@ const isTeraHost=h=>{const x=String(h||'').toLowerCase().replace(/^www\./,'');re
 
 const runUniversalExtractor=async target=>{
  try{
-  const{stdout}=await execFileAsync('yt-dlp',['--dump-single-json','--no-playlist','--no-warnings','--skip-download','-f','best[acodec!=none][vcodec!=none]/best',target],{timeout:30000,maxBuffer:20*1024*1024});
+  const ytArgs=['--dump-single-json','--no-playlist','--no-warnings','--skip-download','--no-js-runtimes','--js-runtimes','node','--remote-components','ejs:github','-f','best[ext=mp4][acodec!=none][vcodec!=none]/best[acodec!=none][vcodec!=none]/best',target];
+  const{stdout}=await execFileAsync('yt-dlp',ytArgs,{timeout:25000,maxBuffer:20*1024*1024});
   const d=JSON.parse(stdout),formats=Array.isArray(d.formats)?d.formats:[];
   const usable=formats.filter(x=>x?.url&&x.vcodec&&x.vcodec!=='none').sort((a,b)=>(b.height||0)-(a.height||0)||(b.tbr||0)-(a.tbr||0));
   const best=usable[0];
@@ -60,9 +61,9 @@ app.get('/api/resolve',allowApi,async(req,res)=>{
   const target=req.query.url;if(!target)return res.status(400).json({error:'Missing url'});
   const u=new URL(target);
   if(!['http:','https:'].includes(u.protocol)||await blockedHost(u.hostname))return res.status(400).json({error:'URL not allowed'});
+  if(isTeraHost(u.hostname)){const tera=await resolveTeraExternal(target);if(tera?.url)return res.json(tera)}
   const extracted=await runUniversalExtractor(target);
   if(extracted?.url)return res.json(extracted);
-  if(isTeraHost(u.hostname)){const tera=await resolveTeraExternal(target);if(tera?.url)return res.json(tera)}
   const r=await fetch(u,{redirect:'follow',headers:{'user-agent':'Mozilla/5.0 StreamVG Resolver','accept':'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'}});
   const final=new URL(r.url);if(await blockedHost(final.hostname))return res.status(400).json({error:'Redirect target not allowed'});
   const type=r.headers.get('content-type')||'';
