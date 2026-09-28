@@ -14,7 +14,7 @@ export default function App(){
  const [source,setSource]=useState(''),[engine,setEngine]=useState(''),[playing,setPlaying]=useState(false),[resolving,setResolving]=useState(false),[embedSrc,setEmbedSrc]=useState('');
  const [time,setTime]=useState(0),[duration,setDuration]=useState(0),[levels,setLevels]=useState([]),[level,setLevel]=useState(-1);
  const [proxy,setProxy]=useState(false),[speed,setSpeed]=useState(1),[loop,setLoop]=useState({a:null,b:null});
- const [sleep,setSleep]=useState('Off'),[subtitle,setSubtitle]=useState(''),[tab,setTab]=useState('share'),[codeType,setCodeType]=useState('iframe'),[theater,setTheater]=useState(false),[dark,setDark]=useState(true);
+ const [sleep,setSleep]=useState('Off'),[subtitle,setSubtitle]=useState(''),[tab,setTab]=useState('share'),[codeType,setCodeType]=useState('iframe'),[theater,setTheater]=useState(false),[ambient,setAmbient]=useState(false),[oled,setOled]=useState(true),[dark,setDark]=useState(true);
  const [history,setHistory]=useState(()=>{try{return JSON.parse(localStorage.getItem(HIST)||'[]')}catch{return[]}});
  const [stats,setStats]=useState({resolution:'—',bitrate:'—',bandwidth:'—',buffer:'0.0s',dropped:0,codec:'—'});
  const [resume,setResume]=useState(null);
