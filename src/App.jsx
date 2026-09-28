@@ -41,15 +41,15 @@ export default function App(){
 
  const destroy=()=>{hls.current?.destroy();hls.current=null;if(dash.current){try{dash.current.reset()}catch{}}dash.current=null};
  const addHistory=u=>{let h=[{url:u,host:new URL(u).host,title:u.split('/').pop()||u,at:Date.now()},...history.filter(x=>x.url!==u)].slice(0,15);setHistory(h);localStorage.setItem(HIST,JSON.stringify(h))};
- const resolveUrl=async input=>{const direct=/\.(m3u8|mpd|mp4|webm|m4v|mov|ogv|ogg|mkv|ts)(?:[?#]|$)/i.test(input);if(direct)return input;setResolving(true);try{let current=input;const seen=new Set();for(let depth=0;depth<6;depth++){if(seen.has(current))break;seen.add(current);const r=await fetch(API_BASE+'/api/resolve?url='+encodeURIComponent(current));const d=await r.json();if(d.kind==='media'&&d.url)return d.url;const next=[...(d.links||[]),...(d.iframes||[])].find(x=>x&&!seen.has(x));if(!next)break;current=next}throw new Error('No playable media found')}finally{setResolving(false)}};
+ const resolveUrl=async input=>{const direct=/\.(m3u8|mpd|mp4|webm|m4v|mov|ogv|ogg|mkv|ts)(?:[?#]|$)/i.test(input);if(direct)return{url:input,proxy:false};setResolving(true);try{let current=input;const seen=new Set();for(let depth=0;depth<6;depth++){if(seen.has(current))break;seen.add(current);const r=await fetch(API_BASE+'/api/resolve?url='+encodeURIComponent(current));const d=await r.json();if(d.kind==='media'&&d.url)return{url:d.url,proxy:Boolean(d.source==='universal-extractor'||d.source==='terabox-resolver'||d.contentType==='detected')};const next=[...(d.links||[]),...(d.iframes||[])].find(x=>x&&!seen.has(x));if(!next)break;current=next}throw new Error('No playable media found')}finally{setResolving(false)}};
 
  const load=async(input=url,fromHistory=false)=>{
   if(!input)return;setEmbedSrc('');try{new URL(input)}catch{alert('Please enter a valid video URL.');return}
-  const original=input;let playable=input;
-  try{playable=await resolveUrl(input)}
+  const original=input;let playable=input,resolvedProxy=false;
+  try{const resolved=await resolveUrl(input);playable=resolved.url;resolvedProxy=resolved.proxy}
   catch{const e=isYouTube(input)&&youtubeEmbed(input);if(e){destroy();setSource(original);setLevels([]);setLevel(-1);setResume(null);setEmbedSrc(e);setEngine('YouTube fallback');setStats({resolution:'Embedded',bitrate:'—',bandwidth:'—',buffer:'—',dropped:'—',codec:'—',fps:'—',status:'Embedded player'});addHistory(original);window.history.pushState({},'', '?url='+encodeURIComponent(original));return}setEngine('Resolver • No playable media');alert('StreamVG could not find playable media at this URL.');return}
   destroy();setSource(original);setLevels([]);setLevel(-1);setResume(null);
-  const v=video.current;const actual=proxy?escUrl(playable):playable;const low=playable.toLowerCase();
+  const v=video.current;const actual=(proxy||resolvedProxy)?escUrl(playable):playable;const low=playable.toLowerCase();
   if(low.includes('.m3u8')){
    setEngine('HLS.js • Adaptive streaming');
    const Hls=HlsLib||(HlsLib=(await import('hls.js')).default);
