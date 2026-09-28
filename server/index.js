@@ -49,23 +49,30 @@ const runUniversalExtractor=async target=>{
 };
 
 const resolveTeraExternal=async target=>{
+ const headers={'user-agent':'Mozilla/5.0 StreamVG Resolver','accept':'application/json'};
  try{
-  const headers={'user-agent':'Mozilla/5.0 StreamVG Resolver','accept':'application/json'};
   const r=await fetch('https://terabox-worker.robinkumarshakya103.workers.dev/api?url='+encodeURIComponent(target),{headers,redirect:'follow'});
   if(r.ok){
    const d=await r.json(),f=d?.files?.find(x=>x?.streaming_url||x?.download_url)||d?.files?.[0];
    const u=f?.streaming_url||f?.download_url;
-   if(u)return{kind:'media',url:u,headers:{'user-agent':'Mozilla/5.0 StreamVG Resolver','referer':target},title:f?.name||d?.title||'',width:f?.width,height:f?.height,source:'terabox-resolver'};
+   if(u)return{kind:'media',url:u,headers:{...headers,referer:target},title:f?.name||d?.title||'',width:f?.width,height:f?.height,source:'terabox-resolver'};
   }
  }catch{}
  try{
-  const u=new URL(target),surl=u.pathname.split('/').filter(Boolean).pop();
-  if(!surl)return null;
-  const p='https://tbx-proxy.shakir-ansarii075.workers.dev/?mode=stream&surl='+encodeURIComponent(surl)+'&type=M3U8_AUTO_720';
-  const r=await fetch(p,{headers:{'user-agent':'Mozilla/5.0 StreamVG Resolver','accept':'application/vnd.apple.mpegurl,*/*'},redirect:'follow'});
-  const type=r.headers.get('content-type')||'';
-  if(r.ok&&(type.includes('mpegurl')||type.includes('m3u8')||type.includes('text/plain'))){
-   return{kind:'media',url:r.url,headers:{'user-agent':'Mozilla/5.0 StreamVG Resolver','referer':target},title:'TeraBox video',source:'terabox-hls-gateway'};
+  const u=new URL(target),parts=u.pathname.split('/').filter(Boolean),raw=parts[parts.length-1];
+  if(!raw)return null;
+  const surl=raw.startsWith('1')?raw.slice(1):raw;
+  const base='https://tbx-proxy.shakir-ansarii075.workers.dev/';
+  const resolveUrl=base+'?mode=resolve&surl='+encodeURIComponent(surl)+'&refresh=1';
+  const rr=await fetch(resolveUrl,{headers,redirect:'follow'});
+  if(rr.ok){
+   const meta=await rr.json();
+   const streamUrl=base+'?mode=stream&surl='+encodeURIComponent(surl)+'&type=M3U8_AUTO_720';
+   const sr=await fetch(streamUrl,{headers:{...headers,accept:'application/vnd.apple.mpegurl,*/*'},redirect:'follow'});
+   const type=sr.headers.get('content-type')||'';
+   if(sr.ok&&(type.includes('mpegurl')||type.includes('m3u8')||type.includes('text/plain'))){
+    return{kind:'media',url:sr.url,headers:{...headers,referer:target},title:meta?.data?.name||'TeraBox video',width:meta?.data?.width,height:meta?.data?.height,source:'terabox-hls-gateway'};
+   }
   }
  }catch{}
  return null;
