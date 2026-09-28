@@ -1,8 +1,37 @@
-import React from'react';import{createRoot}from'react-dom/client';import'./styles.css';
+import React from 'react';
+import { createRoot } from 'react-dom/client';
+import App from './App.jsx';
+import './styles.css';
 
-window.addEventListener('vite:preloadError',e=>{e.preventDefault();window.location.reload()});
+class StreamVGErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+  componentDidCatch(error, info) {
+    console.error('StreamVG render error:', error, info);
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{minHeight:'100vh',background:'#050505',color:'#f5f1e8',display:'grid',placeItems:'center',padding:32,fontFamily:'system-ui,sans-serif',textAlign:'center'}}>
+          <div>
+            <h1 style={{fontSize:32,margin:'0 0 12px'}}>StreamVG could not load</h1>
+            <p style={{opacity:.72,maxWidth:520,margin:'0 auto'}}>A player component failed to start. Refresh once to load the current build.</p>
+            <button onClick={()=>location.reload()} style={{marginTop:18,padding:'12px 20px',border:0,borderRadius:10,background:'#f2d18b',color:'#111',fontWeight:700,cursor:'pointer'}}>REFRESH STREAMVG</button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
-const root=document.getElementById('root');
-const showBootError=err=>{console.error(err);root.innerHTML='<div style="min-height:100vh;background:#050505;color:#f5f1e8;display:grid;place-items:center;padding:32px;font-family:system-ui,sans-serif;text-align:center"><div><h1 style="font-size:32px;margin:0 0 12px">StreamVG is updating</h1><p style="opacity:.7;max-width:520px">The latest player bundle could not be loaded. Refresh once to load the current version.</p><button onclick="location.reload()" style="margin-top:18px;padding:12px 20px;border:0;border-radius:10px;background:#f2d18b;color:#111;font-weight:700;cursor:pointer">REFRESH STREAMVG</button></div></div>'};
-
-(async()=>{try{const{default:App}=await import('./App.jsx');createRoot(root).render(<App/>)}catch(err){showBootError(err)}})();
+createRoot(document.getElementById('root')).render(
+  <StreamVGErrorBoundary>
+    <App />
+  </StreamVGErrorBoundary>
+);
