@@ -29,10 +29,10 @@ export default function App(){
   const timeUpdate=()=>{setTime(v.currentTime);if(source&&!source.startsWith('blob:'))localStorage.setItem('streamvg-pos-'+source,String(v.currentTime));if(loop.a!=null&&loop.b!=null&&v.currentTime>=loop.b)v.currentTime=loop.a};
   const meta=()=>{setDuration(v.duration||0);setStats(s=>({...s,resolution:v.videoWidth?(v.videoWidth+'×'+v.videoHeight):s.resolution,status:'Ready'}))};
   const play=()=>{setPlaying(true);setStats(s=>({...s,status:'Playing'}))};const pause=()=>{setPlaying(false);setStats(s=>({...s,status:'Paused'}))};
-  const waiting=()=>setStats(s=>({...s,status:'Buffering'}));const playingEvent=()=>setStats(s=>({...s,status:'Playing'}));
+  const waiting=()=>setStats(s=>({...s,status:'Buffering'}));const playingEvent=()=>setStats(s=>({...s,status:'Playing'}));const error=()=>{const e=v.error;setStats(s=>({...s,status:e?.message||('Playback error '+(e?.code||''))}))};
   const resize=()=>setStats(s=>({...s,resolution:v.videoWidth?(v.videoWidth+'×'+v.videoHeight):s.resolution}));
-  v.addEventListener('timeupdate',timeUpdate);v.addEventListener('loadedmetadata',meta);v.addEventListener('play',play);v.addEventListener('pause',pause);v.addEventListener('waiting',waiting);v.addEventListener('playing',playingEvent);v.addEventListener('resize',resize);
-  return()=>{['timeupdate','loadedmetadata','play','pause','waiting','playing','resize'].forEach(e=>v.removeEventListener(e,{timeupdate,loadedmetadata:meta,play,pause,waiting,playing:playingEvent,resize}[e]))}
+  v.addEventListener('timeupdate',timeUpdate);v.addEventListener('loadedmetadata',meta);v.addEventListener('play',play);v.addEventListener('pause',pause);v.addEventListener('waiting',waiting);v.addEventListener('playing',playingEvent);v.addEventListener('resize',resize);v.addEventListener('error',error);
+  return()=>{['timeupdate','loadedmetadata','play','pause','waiting','playing','resize','error'].forEach(e=>v.removeEventListener(e,{timeupdate,loadedmetadata:meta,play,pause,waiting,playing:playingEvent,resize,error}[e]))}
  },[source,loop]);
 
  useEffect(()=>{const onKey=e=>{if(e.target?.tagName==='INPUT'||e.target?.tagName==='SELECT'||e.target?.isContentEditable)return;const v=video.current;if(e.code==='Space'){e.preventDefault();v?.paused?v?.play():v?.pause()}if(e.key.toLowerCase()==='f')v?.requestFullscreen?.();if(e.key.toLowerCase()==='p')v?.requestPictureInPicture?.();if(e.key.toLowerCase()==='t')setTheater(x=>!x);if(e.key.toLowerCase()==='c')setCinema(x=>!x);if(e.key.toLowerCase()==='a')setAmbient(x=>!x)};window.addEventListener('keydown',onKey);
@@ -41,15 +41,15 @@ export default function App(){
 
  const destroy=()=>{hls.current?.destroy();hls.current=null;if(dash.current){try{dash.current.reset()}catch{}}dash.current=null};
  const addHistory=u=>{let h=[{url:u,host:new URL(u).host,title:u.split('/').pop()||u,at:Date.now()},...history.filter(x=>x.url!==u)].slice(0,15);setHistory(h);localStorage.setItem(HIST,JSON.stringify(h))};
- const resolveUrl=async input=>{const direct=/\.(m3u8|mpd|mp4|webm|m4v|mov|ogv|ogg|mkv|ts)(?:[?#]|$)/i.test(input);if(direct)return{url:input,proxy:false};setResolving(true);try{let current=input;const seen=new Set();for(let depth=0;depth<6;depth++){if(seen.has(current))break;seen.add(current);const r=await fetch(API_BASE+'/api/resolve?url='+encodeURIComponent(current));const d=await r.json();if(d.kind==='media'&&d.url)return{url:d.url,proxy:Boolean(d.source==='universal-extractor'||d.source==='terabox-resolver'||d.contentType==='detected')};const next=[...(d.links||[]),...(d.iframes||[])].find(x=>x&&!seen.has(x));if(!next)break;current=next}throw new Error('No playable media found')}finally{setResolving(false)}};
+ const resolveUrl=async input=>{const direct=/\.(m3u8|mpd|mp4|webm|m4v|mov|ogv|ogg|mkv|ts)(?:[?#]|$)/i.test(input);if(direct)return{url:input,proxy:false};setResolving(true);try{let current=input;const seen=new Set();for(let depth=0;depth<6;depth++){if(seen.has(current))break;seen.add(current);const r=await fetch(API_BASE+'/api/resolve?url='+encodeURIComponent(current)+'&_='+Date.now(),{cache:'no-store'});const d=await r.json();if(d.kind==='media'&&d.url)return{url:d.url,originalUrl:d.originalUrl||d.url,proxy:false};const next=[...(d.links||[]),...(d.iframes||[])].find(x=>x&&!seen.has(x));if(!next)break;current=next}throw new Error('No playable media found')}finally{setResolving(false)}};
 
  const load=async(input=url,fromHistory=false)=>{
   if(!input)return;setEmbedSrc('');try{new URL(input)}catch{alert('Please enter a valid video URL.');return}
-  const original=input;let playable=input,resolvedProxy=false;
-  try{const resolved=await resolveUrl(input);playable=resolved.url;resolvedProxy=resolved.proxy}
+  const original=input;let playable=input,resolvedProxy=false,resolvedOriginal=input;
+  try{const resolved=await resolveUrl(input);playable=resolved.url;resolvedOriginal=resolved.originalUrl||input;resolvedProxy=resolved.proxy}
   catch{const e=isYouTube(input)&&youtubeEmbed(input);if(e){destroy();setSource(original);setLevels([]);setLevel(-1);setResume(null);setEmbedSrc(e);setEngine('YouTube fallback');setStats({resolution:'Embedded',bitrate:'—',bandwidth:'—',buffer:'—',dropped:'—',codec:'—',fps:'—',status:'Embedded player'});addHistory(original);window.history.pushState({},'', '?url='+encodeURIComponent(original));return}setEngine('Resolver • No playable media');alert('StreamVG could not find playable media at this URL.');return}
   destroy();setSource(original);setLevels([]);setLevel(-1);setResume(null);
-  const v=video.current;const actual=(proxy||resolvedProxy)?escUrl(playable):playable;const low=playable.toLowerCase();
+  const v=video.current;const actual=(proxy||resolvedProxy)?escUrl(playable):playable;const low=(resolvedOriginal||playable).toLowerCase();
   if(low.includes('.m3u8')){
    setEngine('HLS.js • Adaptive streaming');
    const Hls=HlsLib||(HlsLib=(await import('hls.js')).default);
