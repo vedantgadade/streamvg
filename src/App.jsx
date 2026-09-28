@@ -11,6 +11,7 @@ const escUrl=u=>API_BASE+'/api/proxy?url='+encodeURIComponent(u);
 const teraHosts=['terabox.com','terabox.app','teraboxshare.com','teraboxlink.com','teraboxurl.com','teraboxapp.com','terabox.club','terabox.link','teraboxfree.com','terafileshare.com','terasharefile.com','terasharelink.com','terashareus.com','1024terabox.com','1024tera.com','1024-terabox.com','tera1024box.com','momerybox.com','bestclouddrive.com','4funbox.in','4funbox.com','mirrobox.com','nephobox.com','pebibox.com','fancybox.in','gibibox.com','tibibox.com'];
 const isTeraBox=u=>{try{const h=new URL(u).hostname.toLowerCase().replace(/^www\./,'');return teraHosts.includes(h)||h.includes('terabox')}catch{return false}};
 const youtubeEmbed=u=>{try{const x=new URL(u);let id=x.searchParams.get('v')||'';const p=x.pathname.split('/').filter(Boolean);if(!id&&p.length>=2&&(p[0]==='shorts'||p[0]==='embed'||p[0]==='live'))id=p[1];if(!id&&x.hostname.toLowerCase()==='youtu.be')id=p[0]||'';return id?'https://www.youtube.com/embed/'+encodeURIComponent(id)+'?autoplay=1&rel=0&modestbranding=1':null}catch{return null}};
+const isYouTube=u=>{try{const h=new URL(u).hostname.toLowerCase();return h==='youtube.com'||h==='www.youtube.com'||h==='m.youtube.com'||h==='youtu.be'||h==='www.youtu.be'}catch{return false}};
 
 export default function App(){
  const video=useRef(null),file=useRef(null),subFile=useRef(null),hls=useRef(null),dash=useRef(null),sleepTimer=useRef(null);
