@@ -1,6 +1,6 @@
 import React,{useEffect,useRef,useState}from'react';
 let HlsLib=null;let dashLib=null;
-import{Play,Pause,Upload,Maximize,PictureInPicture,Settings,Activity,Repeat2,Camera,History,Trash2,Link2,Code2,Info,Subtitles,Sun,Moon,Sparkles,MonitorPlay}from'lucide-react';
+import{Play,Pause,Upload,Maximize,PictureInPicture,Settings,Activity,Repeat2,Camera,History,Trash2,Link2,Code2,Info,Subtitles,Sun,Moon,Sparkles,MonitorPlay,ExternalLink}from'lucide-react';
 import SitePage from './pages.jsx';
 
 const API_BASE=(import.meta.env.VITE_API_BASE_URL||'https://streamvg-web-production.up.railway.app').replace(/\/$/,'');
@@ -85,6 +85,7 @@ export default function App(){
    <section className={'playerCard'+(theater?' theater':'')+(ambient?' ambient':'')}><div className="videoWrap">{embedSrc?<iframe src={embedSrc} title="StreamVG embedded video" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowFullScreen/>:<video ref={video} controls playsInline>{subtitle&&<track kind="subtitles" src={subtitle} default/>}</video>}</div>
     {!embedSrc&&<div className="controls"><button onClick={()=>playing?video.current.pause():video.current.play()}>{playing?<Pause/>:<Play/>}</button><span>{clock(time)} / {clock(duration)}</span><input className="seek" type="range" min="0" max={duration||0} step=".1" value={time} onChange={e=>video.current.currentTime=Number(e.target.value)}/><select value={speed} onChange={e=>{let x=Number(e.target.value);setSpeed(x);video.current.playbackRate=x}}>{[.25,.5,.75,1,1.25,1.5,2,4,8,16].map(x=><option key={x} value={x}>{x}×</option>)}</select><button onClick={screenshot}><Camera/></button><button onClick={()=>video.current.requestPictureInPicture?.()}><PictureInPicture/></button><button onClick={()=>video.current.requestFullscreen?.()}><Maximize/></button><button onClick={()=>setTheater(!theater)} title="Theater mode"><MonitorPlay/></button><button onClick={()=>setAmbient(!ambient)} title="Ambient lighting"><Sparkles/></button></div>}
    </section>
+   {source&&!embedSrc&&<div className="downloadBar"><div><b>Need the file?</b><small>Open the downloader with this video URL.</small></div><a href={'https://vgsave.pages.dev/?url='+encodeURIComponent(source)} target="_blank" rel="noreferrer"><ExternalLink/> Open VGSAVE</a></div>}
    {resume!=null&&<div className="resume">Resume from {clock(resume)}? <button onClick={()=>{video.current.currentTime=resume;setResume(null)}}>Resume</button><button onClick={()=>setResume(null)}>Dismiss</button></div>}
    <section className="grid">
     <div className="panel"><div className="panelHead"><h2><Settings/> Quality & Tools</h2><span>{engine||'Waiting'}</span></div>
