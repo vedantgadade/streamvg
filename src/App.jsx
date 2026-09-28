@@ -1,6 +1,6 @@
 import React,{useEffect,useRef,useState}from'react';
 let HlsLib=null;let dashLib=null;
-import{Play,Pause,Upload,Maximize,PictureInPicture,Settings,Activity,Repeat2,Camera,History,Trash2,Link2,Code2,Info,Subtitles,Sun,Moon}from'lucide-react';
+import{Play,Pause,Upload,Maximize,PictureInPicture,Settings,Activity,Repeat2,Camera,History,Trash2,Link2,Code2,Info,Subtitles,Sun,Moon,Sparkles,MonitorPlay}from'lucide-react';
 import SitePage from './pages.jsx';
 
 const API_BASE=(import.meta.env.VITE_API_BASE_URL||'https://streamvg-web-production.up.railway.app').replace(/\/$/,'');
@@ -19,7 +19,7 @@ export default function App(){
  const [stats,setStats]=useState({resolution:'—',bitrate:'—',bandwidth:'—',buffer:'0.0s',dropped:0,codec:'—'});
  const [resume,setResume]=useState(null);
 
- useEffect(()=>{document.documentElement.dataset.theme=dark?'dark':'light'},[dark]);
+ useEffect(()=>{document.documentElement.dataset.theme=dark?'dark':'light';document.documentElement.dataset.oled=dark&&oled?'true':'false'},[dark,oled]);
  useEffect(()=>{const v=video.current;if(!v)return;
   const timeUpdate=()=>{setTime(v.currentTime);if(source)localStorage.setItem('streamvg-pos-'+source,String(v.currentTime));if(loop.a!=null&&loop.b!=null&&v.currentTime>=loop.b)v.currentTime=loop.a};
   const meta=()=>setDuration(v.duration||0);const play=()=>setPlaying(true);const pause=()=>setPlaying(false);
@@ -76,14 +76,14 @@ export default function App(){
  const share=location.origin+'/?url='+encodeURIComponent(source);
 
  return <div className="app">
-  <header><div className="brand"><span>SV</span><div><b>StreamVG</b><small>Video Player & Stream Analyzer</small></div></div><button className="icon" onClick={()=>setDark(!dark)}>{dark?<Sun/>:<Moon/>}</button></header>
+  <header><div className="brand"><span>SV</span><div><b>StreamVG</b><small>Video Player & Stream Analyzer</small></div></div><div className="headerActions"><button className="icon" onClick={()=>setOled(!oled)} title="OLED black mode"><Sparkles/></button><button className="icon" onClick={()=>setDark(!dark)}>{dark?<Sun/>:<Moon/>}</button></div></header>
   <main>
-   <section className="hero"><h1>Play. Analyze. Control.</h1><p>Paste almost any video URL — StreamVG automatically tries direct media, page extraction, embeds, and TeraBox links.</p>
+   <section className="hero"><h1>Play. Analyze. Control.</h1><p>Paste a video page, direct file, stream, or download link. StreamVG turns it into a cinema-style playback experience.</p>
     <div className="inputRow"><input value={url} onChange={e=>setUrl(e.target.value)} onKeyDown={e=>e.key==='Enter'&&load()} placeholder="Paste any video URL — page, Telegram, TeraBox, MP4, HLS or DASH"/><button className="primary" onClick={()=>load()} disabled={resolving}><Play/> {resolving?'Finding video…':'Play'}</button><button className="secondary" onClick={()=>file.current?.click()}><Upload/> Local</button><input ref={file} hidden type="file" accept="video/*" onChange={e=>localPlay(e.target.files[0])}/></div>
     <label className="toggle"><input type="checkbox" checked={proxy} onChange={e=>setProxy(e.target.checked)}/><span/>Use CORS proxy</label>
    </section>
-   <section className={'playerCard'+(theater?' theater':'')}><div className="videoWrap">{embedSrc?<iframe src={embedSrc} title="StreamVG embedded video" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowFullScreen/>:<video ref={video} controls playsInline>{subtitle&&<track kind="subtitles" src={subtitle} default/>}</video>}</div>
-    {!embedSrc&&<div className="controls"><button onClick={()=>playing?video.current.pause():video.current.play()}>{playing?<Pause/>:<Play/>}</button><span>{clock(time)} / {clock(duration)}</span><input className="seek" type="range" min="0" max={duration||0} step=".1" value={time} onChange={e=>video.current.currentTime=Number(e.target.value)}/><select value={speed} onChange={e=>{let x=Number(e.target.value);setSpeed(x);video.current.playbackRate=x}}>{[.25,.5,.75,1,1.25,1.5,2,4,8,16].map(x=><option key={x} value={x}>{x}×</option>)}</select><button onClick={screenshot}><Camera/></button><button onClick={()=>video.current.requestPictureInPicture?.()}><PictureInPicture/></button><button onClick={()=>video.current.requestFullscreen?.()}><Maximize/></button><button onClick={()=>setTheater(!theater)} title="Theater mode">▣</button></div>}
+   <section className={'playerCard'+(theater?' theater':'')+(ambient?' ambient':'')}><div className="videoWrap">{embedSrc?<iframe src={embedSrc} title="StreamVG embedded video" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowFullScreen/>:<video ref={video} controls playsInline>{subtitle&&<track kind="subtitles" src={subtitle} default/>}</video>}</div>
+    {!embedSrc&&<div className="controls"><button onClick={()=>playing?video.current.pause():video.current.play()}>{playing?<Pause/>:<Play/>}</button><span>{clock(time)} / {clock(duration)}</span><input className="seek" type="range" min="0" max={duration||0} step=".1" value={time} onChange={e=>video.current.currentTime=Number(e.target.value)}/><select value={speed} onChange={e=>{let x=Number(e.target.value);setSpeed(x);video.current.playbackRate=x}}>{[.25,.5,.75,1,1.25,1.5,2,4,8,16].map(x=><option key={x} value={x}>{x}×</option>)}</select><button onClick={screenshot}><Camera/></button><button onClick={()=>video.current.requestPictureInPicture?.()}><PictureInPicture/></button><button onClick={()=>video.current.requestFullscreen?.()}><Maximize/></button><button onClick={()=>setTheater(!theater)} title="Theater mode"><MonitorPlay/></button><button onClick={()=>setAmbient(!ambient)} title="Ambient lighting"><Sparkles/></button></div>}
    </section>
    {resume!=null&&<div className="resume">Resume from {clock(resume)}? <button onClick={()=>{video.current.currentTime=resume;setResume(null)}}>Resume</button><button onClick={()=>setResume(null)}>Dismiss</button></div>}
    <section className="grid">
