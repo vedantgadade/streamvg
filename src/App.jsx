@@ -47,7 +47,7 @@ export default function App(){
   if(!input)return;setEmbedSrc('');try{new URL(input)}catch{alert('Please enter a valid video URL.');return}
   const original=input;let playable=input;
   try{playable=await resolveUrl(input)}
-  catch{const e=isYouTube(input)&&youtubeEmbed(input);if(e){destroy();setSource(original);setLevels([]);setLevel(-1);setResume(null);setEmbedSrc(e);setEngine('YouTube fallback');setStats({resolution:'Embedded',bitrate:'—',bandwidth:'—',buffer:'—',dropped:'—',codec:'—',fps:'—',status:'Embedded player');addHistory(original);window.history.pushState({},'', '?url='+encodeURIComponent(original));return}setEngine('Resolver • No playable media');alert('StreamVG could not find playable media at this URL.');return}
+  catch{const e=isYouTube(input)&&youtubeEmbed(input);if(e){destroy();setSource(original);setLevels([]);setLevel(-1);setResume(null);setEmbedSrc(e);setEngine('YouTube fallback');setStats({resolution:'Embedded',bitrate:'—',bandwidth:'—',buffer:'—',dropped:'—',codec:'—',fps:'—',status:'Embedded player'});addHistory(original);window.history.pushState({},'', '?url='+encodeURIComponent(original));return}setEngine('Resolver • No playable media');alert('StreamVG could not find playable media at this URL.');return}
   destroy();setSource(original);setLevels([]);setLevel(-1);setResume(null);
   const v=video.current;const actual=proxy?escUrl(playable):playable;const low=playable.toLowerCase();
   if(low.includes('.m3u8')){
