@@ -49,63 +49,62 @@ const runUniversalExtractor=async target=>{
 };
 
 const resolveTeraExternal=async target=>{
+ const candidates=[target];
  try{
-  const form=new FormData();
-  form.append('url',target);
-  form.append('key','iTeraPlay2025');
-  const r=await fetch('https://iteraplay.com/api/play.php',{method:'POST',body:form,headers:{'user-agent':'Mozilla/5.0 StreamVG Resolver'},signal:AbortSignal.timeout(15000)});
-  if(r.ok){
-   const d=await r.json();
-   const v=d?.data||d;
-   if(!v?.error&&d?.success!==false){
-    const streams=v?.fast_stream_url||v?.stream_url||{};
-    const urls=[
-     streams.q_1080,streams['1080p'],streams['1080'],
-     streams.q_720,streams['720p'],streams['720'],
-     streams.q_480,streams['480p'],streams['480'],
-     streams.q_360,streams['360p'],streams['360'],
-     v?.url,v?.streaming_url
-    ].filter(Boolean);
-    const u=urls[0];
-    if(u)return{kind:'media',url:u,headers:{'user-agent':'Mozilla/5.0 StreamVG Resolver','referer':'https://iteraplay.com/'},title:v?.title||v?.name||'TeraBox video',source:'iteraplay-resolver'};
+  const page=await fetch(target,{redirect:'follow',headers:{'user-agent':'Mozilla/5.0 StreamVG Resolver'},signal:AbortSignal.timeout(8000)});
+  if(page.ok){
+   if(page.url&&page.url!==target)candidates.push(page.url);
+   const html=(await page.text()).slice(0,1000000);
+   for(const m of html.matchAll(/<(?:link|meta)[^>]+(?:rel|property)\\s*=\\s*["'](?:canonical|og:url)["'][^>]+(?:href|content)\\s*=\\s*["']([^"']+)["']/gi)){
+    try{candidates.push(new URL(m[1],page.url).href)}catch{}
    }
   }
  }catch{}
- const headers={'user-agent':'Mozilla/5.0 StreamVG Resolver','accept':'application/json'};
- const candidates=[target];
  try{
   const u=new URL(target),parts=u.pathname.split('/').filter(Boolean),raw=parts[parts.length-1]||u.searchParams.get('surl');
   if(raw){
    const code=raw.startsWith('1')?raw.slice(1):raw;
    candidates.push('https://www.terabox.app/sharing/link?surl='+encodeURIComponent(code));
-   candidates.push('https://1024terabox.com/s/'+encodeURIComponent(code));
-   candidates.push('https://terabox.com/s/'+encodeURIComponent(code));
+   candidates.push('https://terabox.com/sharing/link?surl='+encodeURIComponent(code));
+   candidates.push('https://1024terabox.com/sharing/link?surl='+encodeURIComponent(code));
   }
  }catch{}
+ const seen=new Set();
+ for(const candidate of candidates){
+  if(!candidate||seen.has(candidate))continue;seen.add(candidate);
+  try{
+   const form=new FormData();
+   form.append('url',candidate);
+   form.append('key','iTeraPlay2025');
+   const r=await fetch('https://iteraplay.com/api/play.php',{method:'POST',body:form,headers:{'user-agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/154 Safari/537.36'},signal:AbortSignal.timeout(30000)});
+   if(r.ok){
+    const d=await r.json(),v=d?.data||d;
+    if(!v?.error&&d?.success!==false){
+     const streams=v?.fast_stream_url||v?.stream_url||{};
+     const urls=[streams.q_1080,streams.q_720,streams.q_480,streams.q_360,streams['1080'],streams['720'],streams['480'],streams['360'],v?.url,v?.streaming_url].filter(Boolean);
+     if(urls[0])return{kind:'media',url:urls[0],headers:{'user-agent':'Mozilla/5.0 StreamVG Resolver','referer':'https://iteraplay.com/'},title:v?.title||v?.name||'TeraBox video',width:v?.width,height:v?.height,source:'iteraplay-resolver'};
+    }
+   }
+  }catch{}
+ }
+ const headers={'user-agent':'Mozilla/5.0 StreamVG Resolver','accept':'application/json'};
  for(const candidate of candidates){
   try{
-   const r=await fetch('https://terabox-worker.robinkumarshakya103.workers.dev/api?url='+encodeURIComponent(candidate),{headers,redirect:'follow'});
+   const r=await fetch('https://terabox-worker.robinkumarshakya103.workers.dev/api?url='+encodeURIComponent(candidate),{headers,redirect:'follow',signal:AbortSignal.timeout(12000)});
    if(r.ok){
-    const d=await r.json(),f=d?.files?.find(x=>x?.streaming_url||x?.download_url)||d?.files?.[0];
-    const stream=f?.streaming_url||f?.download_url;
+    const d=await r.json(),f=d?.files?.find(x=>x?.streaming_url||x?.download_url)||d?.files?.[0],stream=f?.streaming_url||f?.download_url;
     if(stream)return{kind:'media',url:stream,headers:{...headers,referer:candidate},title:f?.file_name||f?.name||d?.title||'',width:f?.width,height:f?.height,source:'terabox-resolver'};
    }
   }catch{}
  }
  try{
-  const u=new URL(target),parts=u.pathname.split('/').filter(Boolean),raw=parts[parts.length-1]||u.searchParams.get('surl');
-  if(!raw)return null;
-  const surl=raw.startsWith('1')?raw.slice(1):raw;
-  const base='https://tbx-proxy.shakir-ansarii075.workers.dev/';
-  const rr=await fetch(base+'?mode=resolve&surl='+encodeURIComponent(surl)+'&refresh=1',{headers,redirect:'follow'});
-  let meta=null;
-  if(rr.ok){try{meta=await rr.json()}catch{}}
-  if(rr.ok||meta){
-   const sr=await fetch(base+'?mode=stream&surl='+encodeURIComponent(surl)+'&type=M3U8_AUTO_720',{headers:{...headers,accept:'application/vnd.apple.mpegurl,*/*'},redirect:'follow'});
+  const u=new URL(target),parts=u.pathname.split('/').filter(Boolean),raw=parts[parts.length-1]||u.searchParams.get('surl');if(!raw)return null;
+  const surl=raw.startsWith('1')?raw.slice(1):raw,base='https://tbx-proxy.shakir-ansarii075.workers.dev/';
+  const rr=await fetch(base+'?mode=resolve&surl='+encodeURIComponent(surl)+'&refresh=1',{headers,redirect:'follow',signal:AbortSignal.timeout(12000)});
+  if(rr.ok){
+   const sr=await fetch(base+'?mode=stream&surl='+encodeURIComponent(surl)+'&type=M3U8_AUTO_720',{headers:{...headers,accept:'application/vnd.apple.mpegurl,*/*'},redirect:'follow',signal:AbortSignal.timeout(12000)});
    const type=sr.headers.get('content-type')||'';
-   if(sr.ok&&(type.includes('mpegurl')||type.includes('m3u8')||type.includes('text/plain'))){
-    return{kind:'media',url:sr.url,headers:{...headers,referer:target},title:meta?.data?.name||'TeraBox video',width:meta?.data?.width,height:meta?.data?.height,source:'terabox-hls-gateway'};
-   }
+   if(sr.ok&&(type.includes('mpegurl')||type.includes('m3u8')||type.includes('text/plain')))return{kind:'media',url:sr.url,headers:{...headers,referer:target},title:'TeraBox video',source:'terabox-hls-gateway'};
   }
  }catch{}
  return null;
