@@ -34,6 +34,8 @@ const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..','dist'
 
 const teraHosts=['terabox.com','terabox.app','teraboxshare.com','teraboxlink.com','teraboxurl.com','teraboxapp.com','terabox.club','terabox.link','teraboxfree.com','terafileshare.com','terasharefile.com','terasharelink.com','terashareus.com','1024terabox.com','1024tera.com','1024-terabox.com','tera1024box.com','momerybox.com','bestclouddrive.com','4funbox.in','4funbox.com','mirrobox.com','nephobox.com','pebibox.com','fancybox.in','gibibox.com','tibibox.com'];
 const isTeraHost=h=>{const x=String(h||'').toLowerCase().replace(/^www\./,'');return teraHosts.includes(x)||x.includes('terabox')||x.includes('terafileshare')||x.includes('terashare')};
+const TERABOX_NDUS=String(process.env.TERABOX_NDUS||'').trim();
+const teraAuthHeaders=()=>TERABOX_NDUS?{cookie:'ndus='+TERABOX_NDUS}:{};
 
 const runUniversalExtractor=async target=>{
  try{
@@ -49,9 +51,12 @@ const runUniversalExtractor=async target=>{
 };
 
 const resolveTeraExternal=async target=>{
+ const auth=teraAuthHeaders();
+ const log=(stage,extra={})=>console.log(JSON.stringify({event:'terabox-resolve',stage,target:target.replace(/([?&](?:ndus|cookie|token|key)=)[^&]*/gi,'$1[redacted]'),hasNduCookie:Boolean(TERABOX_NDUS),...extra}));
  const candidates=[target];
  try{
-  const page=await fetch(target,{redirect:'follow',headers:{'user-agent':'Mozilla/5.0 StreamVG Resolver'},signal:AbortSignal.timeout(8000)});
+  const page=await fetch(target,{redirect:'follow',headers:{'user-agent':'Mozilla/5.0 StreamVG Resolver',...auth},signal:AbortSignal.timeout(8000)});
+   log('share-page',{status:page.status,finalUrl:page.url,ok:page.ok});
   if(page.ok){
    if(page.url&&page.url!==target)candidates.push(page.url);
    const html=(await page.text()).slice(0,1000000);
@@ -77,8 +82,10 @@ const resolveTeraExternal=async target=>{
    form.append('url',candidate);
    form.append('key','iTeraPlay2025');
    const r=await fetch('https://iteraplay.com/api/play.php',{method:'POST',body:form,headers:{'user-agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/154 Safari/537.36'},signal:AbortSignal.timeout(30000)});
+   log('iteraplay',{candidate,status:r.status,ok:r.ok});
    if(r.ok){
     const d=await r.json(),v=d?.data||d;
+    if(d?.error||d?.success===false)log('iteraplay-error',{candidate,error:String(d?.error||d?.message||d?.errmsg||'unknown').slice(0,300)});
     if(!v?.error&&d?.success!==false){
      const streams=v?.fast_stream_url||v?.stream_url||{};
      const urls=[streams.q_1080,streams.q_720,streams.q_480,streams.q_360,streams['1080'],streams['720'],streams['480'],streams['360'],v?.url,v?.streaming_url].filter(Boolean);
@@ -87,12 +94,15 @@ const resolveTeraExternal=async target=>{
    }
   }catch{}
  }
- const headers={'user-agent':'Mozilla/5.0 StreamVG Resolver','accept':'application/json'};
+ const headers={'user-agent':'Mozilla/5.0 StreamVG Resolver','accept':'application/json',...auth};
  for(const candidate of candidates){
   try{
-   const r=await fetch('https://terabox-worker.robinkumarshakya103.workers.dev/api?url='+encodeURIComponent(candidate),{headers,redirect:'follow',signal:AbortSignal.timeout(12000)});
+   const r=await fetch('https://terabox-worker.robinkumarshakya103.workers.dev/api?url='+encodeURIComponent(candidate),{headers:{...headers,...auth},redirect:'follow',signal:AbortSignal.timeout(12000)});
+   log('terabox-worker',{candidate,status:r.status,ok:r.ok});
    if(r.ok){
-    const d=await r.json(),f=d?.files?.find(x=>x?.streaming_url||x?.download_url)||d?.files?.[0],stream=f?.streaming_url||f?.download_url;
+    const d=await r.json();
+    if(d?.success===false||d?.error)log('terabox-worker-error',{candidate,error:String(d?.error||d?.message||d?.errmsg||'unknown').slice(0,300)});
+    const f=d?.files?.find(x=>x?.streaming_url||x?.download_url)||d?.files?.[0],stream=f?.streaming_url||f?.download_url;
     if(stream)return{kind:'media',url:stream,headers:{...headers,referer:candidate},title:f?.file_name||f?.name||d?.title||'',width:f?.width,height:f?.height,source:'terabox-resolver'};
    }
   }catch{}
@@ -101,12 +111,15 @@ const resolveTeraExternal=async target=>{
   const u=new URL(target),parts=u.pathname.split('/').filter(Boolean),raw=parts[parts.length-1]||u.searchParams.get('surl');if(!raw)return null;
   const surl=raw.startsWith('1')?raw.slice(1):raw,base='https://tbx-proxy.shakir-ansarii075.workers.dev/';
   const rr=await fetch(base+'?mode=resolve&surl='+encodeURIComponent(surl)+'&refresh=1',{headers,redirect:'follow',signal:AbortSignal.timeout(12000)});
+  log('tbx-resolve',{status:rr.status,ok:rr.ok});
   if(rr.ok){
    const sr=await fetch(base+'?mode=stream&surl='+encodeURIComponent(surl)+'&type=M3U8_AUTO_720',{headers:{...headers,accept:'application/vnd.apple.mpegurl,*/*'},redirect:'follow',signal:AbortSignal.timeout(12000)});
+   log('tbx-stream',{status:sr.status,ok:sr.ok,contentType:sr.headers.get('content-type')||''});
    const type=sr.headers.get('content-type')||'';
    if(sr.ok&&(type.includes('mpegurl')||type.includes('m3u8')||type.includes('text/plain')))return{kind:'media',url:sr.url,headers:{...headers,referer:target},title:'TeraBox video',source:'terabox-hls-gateway'};
   }
  }catch{}
+ log('failed',{reason:'all-resolvers-exhausted'});
  return null;
 };
 
