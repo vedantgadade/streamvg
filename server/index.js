@@ -49,6 +49,28 @@ const runUniversalExtractor=async target=>{
 };
 
 const resolveTeraExternal=async target=>{
+ try{
+  const form=new FormData();
+  form.append('url',target);
+  form.append('key','iTeraPlay2025');
+  const r=await fetch('https://iteraplay.com/api/play.php',{method:'POST',body:form,headers:{'user-agent':'Mozilla/5.0 StreamVG Resolver'},signal:AbortSignal.timeout(15000)});
+  if(r.ok){
+   const d=await r.json();
+   const v=d?.data||d;
+   if(!v?.error&&d?.success!==false){
+    const streams=v?.fast_stream_url||v?.stream_url||{};
+    const urls=[
+     streams.q_1080,streams['1080p'],streams['1080'],
+     streams.q_720,streams['720p'],streams['720'],
+     streams.q_480,streams['480p'],streams['480'],
+     streams.q_360,streams['360p'],streams['360'],
+     v?.url,v?.streaming_url
+    ].filter(Boolean);
+    const u=urls[0];
+    if(u)return{kind:'media',url:u,headers:{'user-agent':'Mozilla/5.0 StreamVG Resolver','referer':'https://iteraplay.com/'},title:v?.title||v?.name||'TeraBox video',source:'iteraplay-resolver'};
+   }
+  }
+ }catch{}
  const headers={'user-agent':'Mozilla/5.0 StreamVG Resolver','accept':'application/json'};
  const candidates=[target];
  try{
