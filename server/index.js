@@ -153,7 +153,7 @@ app.get('/api/stream/:token',allowApi,async(req,res)=>{
   const item=relayGet(req.params.token);if(!item)return res.status(410).send('Stream session expired. Resolve the URL again.');
   const target=req.query.url?new URL(req.query.url):new URL(item.url);
   if(!['http:','https:'].includes(target.protocol)||await blockedHost(target.hostname))return res.status(400).send('URL not allowed');
-  const headers={...item.headers};for(const h of ['range','accept','accept-language']){const v=req.headers[h];if(v)headers[h]=v}if(!headers['user-agent']&&!headers['User-Agent'])headers['user-agent']='Mozilla/5.0 StreamVG Relay';
+  const headers={...item.headers};delete headers.referer;delete headers.Referer;delete headers.referrer;delete headers.Referrer;for(const h of ['range','accept','accept-language']){const v=req.headers[h];if(v)headers[h]=v}if(!headers['user-agent']&&!headers['User-Agent'])headers['user-agent']='Mozilla/5.0 StreamVG Relay';
   const r=await fetch(target,{redirect:'follow',headers});const final=new URL(r.url);if(await blockedHost(final.hostname))return res.status(400).send('Redirect target not allowed');
   const type=r.headers.get('content-type')||'';
   if(type.includes('mpegurl')||target.pathname.toLowerCase().endsWith('.m3u8')){
