@@ -146,3 +146,14 @@ header{height:82px;padding:0 max(18px,calc((100% - 1240px)/2));background:rgba(5
 .theater.theaterDark .theatreAtmosphere{display:none!important}
 .theater.theaterDark .videoWrap{box-shadow:none!important}
 .theater.theaterDark .playerTopbar{background:linear-gradient(180deg,rgba(0,0,0,.9),transparent)!important}
+
+/* Theatre Fill + true blackout refinement */
+.theater.theaterFill .videoWrap{overflow:hidden!important}
+.theater.theaterFill .videoWrap video{object-fit:cover!important}
+.theater.theaterFill .videoWrap iframe{transform:scale(1.34)!important;transform-origin:center center!important;width:100%!important;height:100%!important}
+.theater.theaterDark,.theater.theaterDark:fullscreen{background:#000!important;background-color:#000!important}
+.theater.theaterDark:before,.theater.theaterDark .theatreAtmosphere,.theater.theaterDark .ambientGlow{display:none!important}
+.theater.theaterDark .curtain,.theater.theaterDark .stageGlow,.theater.theaterDark .seatRows,.theater.theaterDark .aisle,.theater.theaterDark .theatreHeader{display:none!important}
+.theater.theaterDark .videoWrap{box-shadow:none!important}
+.theater.theaterDark .playerTopbar{background:#000!important}
+.theater.theaterDark .controls{background:#000!important;border-color:#171717!important}
