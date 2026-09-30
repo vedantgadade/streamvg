@@ -138,3 +138,11 @@ header{height:82px;padding:0 max(18px,calc((100% - 1240px)/2));background:rgba(5
 .cinemaMode:fullscreen .videoWrap{width:min(100vw,180vh)!important;max-height:90dvh!important}
 @media(max-width:760px){.theater .videoWrap{width:91vw!important;max-width:91vw!important;margin-top:clamp(95px,18dvh,135px)!important;max-height:54dvh!important}.theater .curtain{width:6%!important}.theater .seatRows{width:120vw!important;bottom:-6%!important}.theater .controls{width:96vw!important;overflow-x:auto}.theater .playerTopActions{display:flex!important;flex-wrap:wrap;justify-content:flex-end}.theater .playerTopbar>span:not(.nowDot),.theater .playerTopbar>b{display:none}.theater .theatreHeader{top:68px}}
 @media(prefers-reduced-motion:reduce){.theater .controls,.theater .playerTopbar{transition:none}}
+
+/* Theatre-only viewing options: keep all other modes unchanged */
+.theater.theaterFill .videoWrap video,.theater.theaterFill .videoWrap iframe{object-fit:cover!important}
+.theater.theaterDark,.theater.theaterDark:fullscreen{background:#000!important}
+.theater.theaterDark:before{display:none!important}
+.theater.theaterDark .theatreAtmosphere{display:none!important}
+.theater.theaterDark .videoWrap{box-shadow:none!important}
+.theater.theaterDark .playerTopbar{background:linear-gradient(180deg,rgba(0,0,0,.9),transparent)!important}
