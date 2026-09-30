@@ -90,3 +90,22 @@ header{height:82px;padding:0 max(18px,calc((100% - 1240px)/2));background:rgba(5
 .theater{justify-content:flex-start!important;padding-top:0!important}.theater .playerTopbar{flex:0 0 43px;width:100%;margin:0}.theater .videoWrap{width:min(82vw,1280px)!important;max-height:62vh!important;aspect-ratio:16/9!important;margin:clamp(28px,6vh,58px) auto 0!important;box-shadow:0 0 0 7px rgba(255,255,255,.025),0 0 90px rgba(255,188,112,.16),0 30px 90px rgba(0,0,0,.9)!important}.theater .controls{width:min(82vw,1280px)!important;margin:0 auto!important}.theater .theatreAtmosphere{z-index:0}.theater .seatRows{bottom:-7%;z-index:2;opacity:.95}.theater .curtain{z-index:2}.theater .stageGlow{z-index:1;top:8%;height:52%}.theater .videoWrap,.theater .controls{position:relative}.theater .videoWrap{z-index:6}.theater .controls{z-index:8}
 @media(max-width:1050px){.featureBento{grid-template-columns:1.4fr 1fr 1fr}.bentoCard:nth-of-type(4),.bentoCard:nth-of-type(5){display:none}}
 @media(max-width:760px){header{height:70px}.headerPulse,.headerChip{display:none}.hero{min-height:390px;padding-top:50px}.hero h1{font-size:48px!important;letter-spacing:-3px!important}.quickLaunch button{flex:1}.featureBento{grid-template-columns:1fr 1fr}.bentoIntro{grid-column:1/-1;min-height:125px}.bentoCard:nth-of-type(4),.bentoCard:nth-of-type(5){display:flex}.theater .videoWrap{width:94vw!important;margin-top:32px!important}.theater .controls{width:94vw!important}.theater .seatRows{width:120vw}.playerTopActions{display:none}}
+
+/* Theatre screen framing fix */
+.theater .videoWrap{width:min(68vw,1080px)!important;max-width:1080px!important;max-height:58vh!important;margin:clamp(30px,7vh,72px) auto 0!important;z-index:7!important;aspect-ratio:16/9!important;flex:0 0 auto}
+.theater .theatreAtmosphere{z-index:1}
+.theater .curtain{width:9%!important;z-index:2!important}
+.theater .curtainLeft{left:-1%!important}
+.theater .curtainRight{right:-1%!important}
+.theater .stageGlow{z-index:3;top:9%;height:48%;width:62%}
+.theater .seatRows{z-index:4;bottom:-8%;width:min(78vw,1180px)}
+.theater .controls{width:min(68vw,1080px)!important;z-index:9!important}
+.theatreRatio{display:inline-flex;align-items:center;gap:6px;color:#748098;font-size:9px;letter-spacing:.7px}
+.theatreRatio select{background:#151a27;border:1px solid #30384b;color:#dce4f5;border-radius:7px;padding:5px 7px;font-size:9px}
+.theatreRatio select:focus{outline:none;border-color:#7165ff}
+@media(max-width:760px){
+ .theater .videoWrap{width:88vw!important;max-height:52vh!important;margin-top:30px!important}
+ .theater .controls{width:88vw!important}
+ .theater .curtain{width:13%!important}
+ .theater .seatRows{width:105vw}
+}
