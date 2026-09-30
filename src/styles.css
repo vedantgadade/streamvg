@@ -109,3 +109,32 @@ header{height:82px;padding:0 max(18px,calc((100% - 1240px)/2));background:rgba(5
  .theater .curtain{width:13%!important}
  .theater .seatRows{width:105vw}
 }
+
+/* Immersive auditorium v3: frameless projected image, realistic room depth */
+.theater,.theater:fullscreen{height:100dvh!important;min-height:100dvh!important;width:100vw!important;inset:0!important;position:fixed!important;overflow:hidden!important;background:radial-gradient(ellipse 60% 65% at 50% 39%,rgba(52,43,51,.40) 0%,rgba(12,10,15,.75) 63%,#010102 100%)!important}
+.theater:before{content:"";position:absolute;inset:0;pointer-events:none;z-index:1;background:linear-gradient(90deg,rgba(0,0,0,.75),transparent 17%,transparent 83%,rgba(0,0,0,.75)),linear-gradient(180deg,#050306 0%,transparent 18%,transparent 60%,#030204 100%)}
+.theater .theatreAtmosphere{z-index:1!important;background:radial-gradient(ellipse 48% 42% at 50% 35%,rgba(240,203,155,.12),transparent 85%),repeating-linear-gradient(90deg,transparent 0 7%,rgba(0,0,0,.12) 7.2% 7.6%,transparent 8% 15%),linear-gradient(180deg,#09060b,#030203 72%)}
+.theater .theatreAtmosphere:before{content:"";position:absolute;inset:0;background:linear-gradient(112deg,transparent 15%,rgba(240,203,168,.04) 31%,transparent 48%),linear-gradient(248deg,transparent 15%,rgba(240,203,168,.04) 31%,transparent 48%);filter:blur(14px)}
+.theater .curtain{width:8%!important;top:0!important;bottom:-3%!important;background:repeating-linear-gradient(90deg,#100308 0%,#420a1c 12%,#6d1328 21%,#21040e 33%,#500a1d 46%,#140308 55%)!important;filter:drop-shadow(8px 0 24px #000);opacity:.85}
+.theater .curtainLeft{left:-2%!important}.theater .curtainRight{right:-2%!important}
+.theater .stageGlow{width:72%!important;height:65%!important;top:11%!important;opacity:.6;filter:blur(42px)!important}
+.theater .videoWrap{width:min(74vw,1180px)!important;max-width:calc(100vw - 15vw)!important;max-height:65dvh!important;height:auto!important;aspect-ratio:var(--unused-ratio,auto);margin:clamp(56px,11dvh,105px) auto 0!important;padding:0!important;border:0!important;border-radius:0!important;outline:0!important;background:#000!important;box-shadow:0 0 48px rgba(242,218,183,.09),0 22px 80px rgba(0,0,0,.96)!important;overflow:hidden!important;z-index:6!important;flex:0 0 auto}
+.theater .videoWrap video,.theater .videoWrap iframe{width:100%!important;height:100%!important;display:block!important;object-fit:contain!important;border:0!important;border-radius:0!important;box-shadow:none!important;background:#000!important}
+.theater .seatRows{bottom:-9%!important;width:min(85vw,1380px)!important;gap:3px!important;opacity:.92;filter:drop-shadow(0 -5px 15px #000);transform:translateX(-50%) perspective(700px) rotateX(28deg)!important}
+.theater .seatRow{filter:brightness(.53)}
+.theater .aisle{opacity:.26}
+.theater .playerTopbar{position:absolute!important;top:0;left:0;right:0;width:100%!important;z-index:20!important;background:linear-gradient(180deg,rgba(0,0,0,.88),transparent)!important;border:0!important;transition:opacity .24s,transform .24s}
+.theater .controls,.cinemaMode .controls{position:absolute!important;left:50%;bottom:clamp(10px,4dvh,36px);transform:translateX(-50%);width:min(74vw,1180px)!important;max-width:calc(100vw - 20px)!important;margin:0!important;padding:9px 12px!important;background:rgba(8,8,13,.78)!important;border:1px solid rgba(255,255,255,.1)!important;border-radius:12px!important;backdrop-filter:blur(18px);z-index:30!important;transition:opacity .22s,transform .22s,visibility .22s}
+.theater.controlsHidden .playerTopbar,.cinemaMode.controlsHidden .playerTopbar{opacity:0;visibility:hidden;transform:translateY(-12px);pointer-events:none}
+.theater.controlsHidden .controls,.cinemaMode.controlsHidden .controls{opacity:0;visibility:hidden;transform:translate(-50%,14px);pointer-events:none}
+.theater.controlsHidden,.cinemaMode.controlsHidden{cursor:none}
+.theater .theatreHeader{top:clamp(46px,7dvh,70px);opacity:.38}
+.theater.houseLightsOn{background:radial-gradient(ellipse at 50% 30%,#383039 0%,#171019 55%,#08060a 100%)!important}
+.theater.houseLightsOn .theatreAtmosphere{filter:brightness(1.65)}
+.theater.houseLightsOn .seatRow{filter:brightness(.95)}
+.theater:fullscreen,.cinemaMode:fullscreen{position:fixed!important;inset:0!important;max-width:none!important;border-radius:0!important}
+.theater:fullscreen .videoWrap{max-height:69dvh!important}
+.cinemaMode:fullscreen{height:100dvh!important;display:flex;align-items:center;justify-content:center;background:#000!important}
+.cinemaMode:fullscreen .videoWrap{width:min(100vw,180vh)!important;max-height:90dvh!important}
+@media(max-width:760px){.theater .videoWrap{width:91vw!important;max-width:91vw!important;margin-top:clamp(95px,18dvh,135px)!important;max-height:54dvh!important}.theater .curtain{width:6%!important}.theater .seatRows{width:120vw!important;bottom:-6%!important}.theater .controls{width:96vw!important;overflow-x:auto}.theater .playerTopActions{display:flex!important;flex-wrap:wrap;justify-content:flex-end}.theater .playerTopbar>span:not(.nowDot),.theater .playerTopbar>b{display:none}.theater .theatreHeader{top:68px}}
+@media(prefers-reduced-motion:reduce){.theater .controls,.theater .playerTopbar{transition:none}}
