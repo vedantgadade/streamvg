@@ -6,6 +6,10 @@ import { lookup } from 'node:dns/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
+import { mkdir, unlink } from 'node:fs/promises';
+import { createWriteStream } from 'node:fs';
+import { pipeline } from 'node:stream/promises';
+import { spawn } from 'node:child_process';
 
 const execFileAsync=promisify(execFile);
 const app=express();
@@ -29,6 +33,75 @@ const allowApi=(req,res,next)=>{
 };
 app.use('/api',express.json({limit:'16kb'}));
 app.options('/api/*splat',(req,res)=>res.sendStatus(204));
+
+const localMediaStore=new Map();
+const LOCAL_MEDIA_TTL=30*60*1000;
+const LOCAL_MEDIA_DIR='/tmp/streamvg-local';
+const LOCAL_MEDIA_MAX=8*1024*1024*1024;
+
+const localMediaCleanup=async token=>{
+ const item=localMediaStore.get(token);
+ if(!item)return;
+ localMediaStore.delete(token);
+ try{await unlink(item.path)}catch{}
+};
+
+app.post('/api/local-session',async(req,res)=>{
+ res.setHeader('Access-Control-Allow-Origin','https://streamvg.pages.dev');
+ res.setHeader('Access-Control-Allow-Methods','POST,OPTIONS');
+ res.setHeader('Access-Control-Allow-Headers','Content-Type');
+ const declared=Number(req.headers['content-length']||0);
+ if(declared>LOCAL_MEDIA_MAX)return res.status(413).json({error:'Local file is too large for the server media engine.'});
+ const token=randomUUID(),filePath=path.join(LOCAL_MEDIA_DIR,token+'.media');
+ let bytes=0,tooLarge=false;
+ const onData=chunk=>{bytes+=chunk.length;if(bytes>LOCAL_MEDIA_MAX){tooLarge=true;req.destroy(new Error('Local file exceeds the 8 GB server limit.'))}};
+ req.on('data',onData);
+ try{
+  await mkdir(LOCAL_MEDIA_DIR,{recursive:true});
+  await pipeline(req,createWriteStream(filePath));
+  req.off('data',onData);
+  if(tooLarge)throw new Error('Local file exceeds the 8 GB server limit.');
+  console.log(JSON.stringify({event:'local-media-upload-complete',token,size:bytes}));
+  const{stdout,stderr}=await execFileAsync('ffprobe',['-v','error','-show_streams','-show_format','-of','json',filePath],{timeout:120000,maxBuffer:20*1024*1024});
+  if(stderr)console.log(JSON.stringify({event:'local-media-probe-stderr',token,stderr:String(stderr).slice(-4000)}));
+  const probe=JSON.parse(stdout||'{}');
+  const streams=Array.isArray(probe.streams)?probe.streams:[];
+  const audio=streams.filter(x=>x.codec_type==='audio').map((x,i)=>({i,index:x.index,codec:x.codec_name||'',codecLong:x.codec_long_name||'',language:x.tags?.language||x.tags?.language_ietf||'',title:x.tags?.title||x.tags?.handler_name||('Audio '+(i+1)),channels:x.channels||0,sampleRate:x.sample_rate||'',bitrate:x.bit_rate||''}));
+  console.log(JSON.stringify({event:'local-media-audio-codecs',token,size:bytes,audio}));
+  if(!audio.length){await unlink(filePath).catch(()=>{});return res.status(422).json({error:'No audio stream found in local media.',streams})}
+  localMediaStore.set(token,{path:filePath,streams,expires:Date.now()+LOCAL_MEDIA_TTL});
+  res.json({token,size:bytes,streams});
+ }catch(err){
+  req.off('data',onData);
+  await unlink(filePath).catch(()=>{});
+  console.error(JSON.stringify({event:'local-media-session-error',error:String(err?.stack||err)}));
+  if(!res.headersSent)res.status(500).json({error:String(err?.message||'Local media session failed')});
+ }
+});
+
+app.get('/api/local-audio/:token',async(req,res)=>{
+ res.setHeader('Access-Control-Allow-Origin','https://streamvg.pages.dev');
+ res.setHeader('Access-Control-Allow-Methods','GET,OPTIONS');
+ const item=localMediaStore.get(req.params.token);
+ if(!item||item.expires<Date.now()){if(item)await localMediaCleanup(req.params.token);return res.status(410).json({error:'Local media session expired.'})}
+ const track=Number(req.query.track??0);
+ const audio=item.streams.filter(x=>x.codec_type==='audio');
+ if(!Number.isInteger(track)||track<0||track>=audio.length)return res.status(400).json({error:'Invalid audio track.'});
+ const stream=audio[track],codec=String(stream.codec_name||'');
+ console.log(JSON.stringify({event:'local-audio-extraction-start',token:req.params.token,track,codec}));
+ const ff=spawn('ffmpeg',['-hide_banner','-loglevel','info','-i',item.path,'-map','0:a:'+track,'-vn','-c:a','aac','-b:a','192k','-movflags','+frag_keyframe+empty_moov+default_base_moof','-f','mp4','pipe:1'],{stdio:['ignore','pipe','pipe']});
+ let stderr='';
+ ff.stderr.on('data',chunk=>{stderr+=chunk.toString();if(stderr.length>12000)stderr=stderr.slice(-12000)});
+ ff.once('error',err=>{console.error(JSON.stringify({event:'local-audio-extraction-error',token:req.params.token,track,codec,error:String(err?.stack||err)}));if(!res.headersSent)res.status(500).json({error:String(err?.message||'FFmpeg could not start')});else res.destroy(err)});
+ ff.once('close',code=>{console.log(JSON.stringify({event:'local-audio-extraction-finished',token:req.params.token,track,codec,code,stderr:stderr.slice(-4000)}));if(code!==0&&!res.destroyed)res.destroy(new Error('FFmpeg audio extraction failed with code '+code))});
+ res.statusCode=200;
+ res.setHeader('Content-Type','audio/mp4');
+ res.setHeader('Cache-Control','no-store');
+ res.setHeader('X-StreamVG-Audio-Codec',codec);
+ res.setHeader('X-StreamVG-Audio-Track',String(track));
+ ff.stdout.pipe(res);
+ req.on('close',()=>{if(!res.writableEnded&&!ff.killed)ff.kill('SIGTERM')});
+});
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..','dist');
 
