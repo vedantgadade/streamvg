@@ -29,6 +29,7 @@ export default function App(){
  useEffect(()=>{const key=e=>{if(e.key==='Escape'&&theater&&!document.fullscreenElement)setTheater(false);if((theater||cinema)&&e.key.toLowerCase()==='f'&&!['INPUT','SELECT','TEXTAREA'].includes(document.activeElement?.tagName)){e.preventDefault();fullscreenTheatre()}};window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key)},[theater,cinema]);
  useEffect(()=>{const v=video.current;if(!v)return;
   const timeUpdate=()=>{setTime(v.currentTime);if(source)localStorage.setItem('streamvg-pos-'+source,String(v.currentTime));if(loop.a!=null&&loop.b!=null&&v.currentTime>=loop.b)v.currentTime=loop.a};
+  const volumeChange=()=>{setVolume(v.volume);setMuted(v.muted||v.volume===0)};
   const meta=()=>{setDuration(v.duration||0);if(source.startsWith('blob:')){setLevels([{i:0,height:v.videoHeight,width:v.videoWidth,bitrate:0,codec:'Original local file'}]);setLevel(0);syncNativeTracks()}};const play=()=>setPlaying(true);const pause=()=>setPlaying(false);
   v.addEventListener('timeupdate',timeUpdate);v.addEventListener('loadedmetadata',meta);v.addEventListener('play',play);v.addEventListener('pause',pause);v.addEventListener('volumechange',volumeChange);volumeChange();
   return()=>{v.removeEventListener('timeupdate',timeUpdate);v.removeEventListener('loadedmetadata',meta);v.removeEventListener('play',play);v.removeEventListener('pause',pause);v.removeEventListener('volumechange',volumeChange)}
