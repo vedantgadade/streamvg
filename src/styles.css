@@ -187,9 +187,9 @@ header{height:82px;padding:0 max(18px,calc((100% - 1240px)/2));background:rgba(5
 /* Keep fullscreen tools mounted and let the fullscreen player control their visibility. */
 .playerCard:fullscreen{overflow:visible!important}
 .playerCard .svFullscreenTools{display:none!important}
-.playerCard:fullscreen .svFullscreenTools{display:flex!important;position:fixed!important;left:12px!important;right:12px!important;bottom:12px!important;z-index:9999!important;max-width:calc(100vw - 24px)!important;max-height:42vh!important;overflow:auto!important;}
-.playerCard:fullscreen.controlsHidden .svFullscreenTools{display:flex!important;opacity:0!important;visibility:hidden!important;pointer-events:none!important}
-.playerCard:fullscreen:not(.controlsHidden) .svFullscreenTools{opacity:1!important;visibility:visible!important;pointer-events:auto!important}
+.playerCard:fullscreen .svFullscreenTools{display:none!important;position:fixed!important;left:12px!important;right:12px!important;bottom:12px!important;z-index:9999!important;max-width:calc(100vw - 24px)!important;max-height:42vh!important;overflow:auto!important;}
+.playerCard:fullscreen.controlsHidden .svFullscreenTools{display:none!important;opacity:0!important;visibility:hidden!important;pointer-events:none!important}
+.playerCard:fullscreen:not(.controlsHidden) .svFullscreenTools.settingsOpen{display:flex!important;opacity:1!important;visibility:visible!important;pointer-events:auto!important}
 
 
 /* Samsung TV fullscreen seek timeline */
