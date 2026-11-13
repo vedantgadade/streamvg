@@ -160,3 +160,16 @@ header{height:82px;padding:0 max(18px,calc((100% - 1240px)/2));background:rgba(5
 
 /* QR phone remote */
 .remoteOverlay{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;padding:18px;background:rgba(3,5,10,.82);backdrop-filter:blur(14px)}.remoteModal,.remoteCard{position:relative;width:min(100%,440px);padding:28px;border:1px solid rgba(255,255,255,.12);border-radius:22px;background:linear-gradient(145deg,#171b2a,#0b0e16);box-shadow:0 28px 90px rgba(0,0,0,.55)}.remoteModal h2,.remoteCard h1{margin:20px 0 8px;font-size:25px;letter-spacing:-.7px}.remoteModal p,.remoteCard p{color:#9da8bb;line-height:1.6;font-size:14px}.remoteQr{display:block;width:260px;height:260px;max-width:100%;margin:18px auto;padding:9px;border-radius:15px;background:#fff}.remoteClose{position:absolute;right:15px;top:15px;background:#252b3a}.remoteModal .remoteStatus,.remoteStatus{margin:14px 0;padding:11px 13px;border-radius:10px;background:rgba(91,104,255,.1);color:#c4caff;font-size:13px;line-height:1.5}.remoteModal>small,.remoteTip{display:block;margin-top:12px;color:#748099;font-size:11px;text-align:center}.remotePage{min-height:100dvh;display:grid;place-items:center;padding:20px}.remoteCard{width:min(100%,500px);margin:0 auto}.remoteCard h1{font-size:30px}.remoteCard form{display:grid;gap:10px;margin-top:20px}.remoteCard form input{width:100%;min-width:0;padding:15px;border-radius:10px;border:1px solid #394258;background:#090d16;color:#fff;font-size:15px}.remoteCard form button{justify-content:center;padding:14px}.remoteCard .remoteStatus{min-height:44px}.remoteCard .brand{margin-bottom:26px}@media(max-width:520px){.remoteModal,.remoteCard{padding:22px}.remoteQr{width:230px;height:230px}}
+
+/* StreamVG fullscreen controls and local audio tuning */
+.svFullscreenTools label,.playerSetting{display:inline-flex;align-items:center;gap:7px;font-size:11px;color:#dce5f8}
+.svFullscreenTools select,.svFullscreenTools input[type=range],.playerSetting select,.playerSetting input[type=range]{max-width:125px;accent-color:#7c5cff}
+.svFullscreenTools select,.playerSetting select{background:#171d28;border:1px solid #3a4358;color:#fff;border-radius:7px;padding:6px}
+.svFullscreenTools button{background:#252b3b;border:1px solid #414b61;color:#fff;padding:7px 10px}
+.svFullscreenTools button:hover{border-color:#7c5cff}
+.playerSetting input[type=range]{width:90px}
+.svFullscreenTools input:disabled,.playerSetting input:disabled,.playerSetting select:disabled{opacity:.45}
+@media(max-width:760px){.svFullscreenTools{max-height:35vh;overflow:auto;font-size:10px}.svFullscreenTools label{font-size:10px}.svFullscreenTools select{max-width:100px}.playerSetting{font-size:10px}}
+
+.playerCard:fullscreen.controlsHidden .controls,.playerCard:fullscreen.controlsHidden .playerTopbar,.playerCard:fullscreen.controlsHidden .svFullscreenTools{opacity:0!important;visibility:hidden!important;pointer-events:none!important;transition:opacity .2s,visibility .2s}
+.playerCard:fullscreen .svFullscreenTools{transition:opacity .2s,visibility .2s}
