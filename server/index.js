@@ -49,7 +49,7 @@ const remoteMediaGet=token=>{const item=remoteMediaStore.get(token);if(!item||it
 const inspectRemoteMedia=async target=>{
  const u=new URL(target);
  if(!['http:','https:'].includes(u.protocol)||u.username||u.password||await blockedHost(u.hostname))throw new Error('This media URL is not allowed.');
- const{stdout}=await execFileAsync('ffprobe',['-v','error','-rw_timeout','20000000','-show_streams','-show_format','-of','json',target],{timeout:45000,maxBuffer:20*1024*1024});
+ const{stdout}=await execFileAsync('ffprobe',['-v','error','-rw_timeout','30000000','-probesize','100M','-analyzeduration','100M','-show_streams','-show_format','-of','json',target],{timeout:90000,maxBuffer:20*1024*1024});
  const data=JSON.parse(stdout||'{}');
  return Array.isArray(data.streams)?data.streams:[];
 };
