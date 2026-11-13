@@ -286,6 +286,6 @@ const extractMedia=(html,base)=>{
 
 setInterval(()=>{const now=Date.now();for(const[token,item]of localMediaStore)if(item.expires<now)localMediaCleanup(token)},60000).unref();
 setInterval(()=>{const now=Date.now();for(const[k,v]of rate)if(now-v.at>RATE_WINDOW*2)rate.delete(k)},RATE_WINDOW*2).unref();
-const API_PUBLIC=(process.env.PUBLIC_API_URL||'https://streamvg-web-production.up.railway.app').replace(/\/$/,'');
+const API_PUBLIC=(process.env.PUBLIC_API_URL||'https://streamvg-web-production-22879f12.up.railway.app').replace(/\/$/,'');
 setInterval(()=>{const now=Date.now();for(const[k,v]of relayStore)if(v.expires<now)relayStore.delete(k)},60000).unref();
 const port=process.env.PORT||3000;createServer(app).listen(port,()=>console.log('StreamVG listening on '+port));
