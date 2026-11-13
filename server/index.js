@@ -43,7 +43,7 @@ app.get('/api/remote/:code/poll',(req,res)=>{remoteCors(req,res);const item=remo
 app.post('/api/remote/:code/play',(req,res)=>{remoteCors(req,res);const item=remoteGet(req.params.code);if(!item)return res.status(410).json({error:'This TV connection has expired. Scan a new QR code.'});const value=String(req.body?.url||'').trim();if(value.length>8192)return res.status(413).json({error:'The video URL is too long.'});try{const parsed=new URL(value);if(!['http:','https:'].includes(parsed.protocol))throw new Error()}catch{return res.status(400).json({error:'Please send a valid http or https video URL.'})}item.pendingUrl=value;res.json({ok:true})});
 
 const localMediaStore=new Map();
-const LOCAL_MEDIA_TTL=30*60*1000;
+const LOCAL_MEDIA_TTL=8*60*60*1000;
 const LOCAL_MEDIA_DIR='/tmp/streamvg-local';
 const LOCAL_MEDIA_MAX=8*1024*1024*1024;
 
@@ -92,6 +92,7 @@ app.get('/api/local-audio/:token',async(req,res)=>{
  res.setHeader('Access-Control-Allow-Methods','GET,OPTIONS');
  const item=localMediaStore.get(req.params.token);
  if(!item||item.expires<Date.now()){if(item)await localMediaCleanup(req.params.token);return res.status(410).json({error:'Local media session expired.'})}
+ item.expires=Date.now()+LOCAL_MEDIA_TTL;
  const track=Number(req.query.track??0);
  const audio=item.streams.filter(x=>x.codec_type==='audio');
  if(!Number.isInteger(track)||track<0||track>=audio.length)return res.status(400).json({error:'Invalid audio track.'});
