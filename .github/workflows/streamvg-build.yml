@@ -21,5 +21,7 @@ jobs:
           node-version: 22
       - name: Install packages
         run: npm install --no-audit --no-fund
+      - name: Check backend syntax
+        run: node --check server/index.js
       - name: Build StreamVG
         run: npm run build
