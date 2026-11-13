@@ -1,0 +1,25 @@
+name: StreamVG build check
+
+on:
+  push:
+    branches:
+      - main
+      - streamvg-complete-player-controls
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install packages
+        run: npm install --no-audit --no-fund
+      - name: Build StreamVG
+        run: npm run build
