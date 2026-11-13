@@ -190,3 +190,10 @@ header{height:82px;padding:0 max(18px,calc((100% - 1240px)/2));background:rgba(5
 .playerCard:fullscreen .svFullscreenTools{display:flex!important;position:fixed!important;left:12px!important;right:12px!important;bottom:12px!important;z-index:9999!important;max-width:calc(100vw - 24px)!important;max-height:42vh!important;overflow:auto!important;}
 .playerCard:fullscreen.controlsHidden .svFullscreenTools{display:flex!important;opacity:0!important;visibility:hidden!important;pointer-events:none!important}
 .playerCard:fullscreen:not(.controlsHidden) .svFullscreenTools{opacity:1!important;visibility:visible!important;pointer-events:auto!important}
+
+
+/* Samsung TV fullscreen seek timeline */
+.playerCard:fullscreen .svFullscreenTools .svTimeline{display:flex;flex:1 1 100%;min-width:260px;gap:10px;align-items:center;color:#fff;font-size:13px}
+.playerCard:fullscreen .svFullscreenTools .svTimeline input[type=range]{flex:1 1 auto;width:100%;max-width:none;min-width:140px;accent-color:#8b75ff;cursor:pointer}
+.playerCard:fullscreen .svFullscreenTools .svTimeline span{min-width:42px;text-align:center;font-variant-numeric:tabular-nums}
+@media(max-width:760px){.playerCard:fullscreen .svFullscreenTools .svTimeline{min-width:100%;font-size:11px}.playerCard:fullscreen .svFullscreenTools .svTimeline input[type=range]{min-width:100px}}
