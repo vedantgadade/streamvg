@@ -42,6 +42,69 @@ app.post('/api/remote/create',(req,res)=>{remoteCors(req,res);if(remoteSessions.
 app.get('/api/remote/:code/poll',(req,res)=>{remoteCors(req,res);const item=remoteGet(req.params.code);if(!item)return res.status(410).json({error:'This TV connection has expired. Create a new QR code.'});const url=item.pendingUrl;item.pendingUrl='';res.json({url:url||null,expiresIn:Math.max(0,Math.floor((item.expires-Date.now())/1000))})});
 app.post('/api/remote/:code/play',(req,res)=>{remoteCors(req,res);const item=remoteGet(req.params.code);if(!item)return res.status(410).json({error:'This TV connection has expired. Scan a new QR code.'});const value=String(req.body?.url||'').trim();if(value.length>8192)return res.status(413).json({error:'The video URL is too long.'});try{const parsed=new URL(value);if(!['http:','https:'].includes(parsed.protocol))throw new Error()}catch{return res.status(400).json({error:'Please send a valid http or https video URL.'})}item.pendingUrl=value;res.json({ok:true})});
 
+
+const remoteMediaStore=new Map();
+const REMOTE_MEDIA_TTL=30*60*1000;
+const remoteMediaGet=token=>{const item=remoteMediaStore.get(token);if(!item||item.expires<Date.now()){remoteMediaStore.delete(token);return null}item.expires=Date.now()+REMOTE_MEDIA_TTL;return item};
+const inspectRemoteMedia=async target=>{
+ const u=new URL(target);
+ if(!['http:','https:'].includes(u.protocol)||u.username||u.password||await blockedHost(u.hostname))throw new Error('This media URL is not allowed.');
+ const{stdout}=await execFileAsync('ffprobe',['-v','error','-rw_timeout','20000000','-show_streams','-show_format','-of','json',target],{timeout:45000,maxBuffer:20*1024*1024});
+ const data=JSON.parse(stdout||'{}');
+ return Array.isArray(data.streams)?data.streams:[];
+};
+app.post('/api/remote-media-session',async(req,res)=>{
+ remoteCors(req,res);
+ try{
+  const target=String(req.body?.url||'').trim();
+  if(!target||target.length>8192)return res.status(400).json({error:'A valid media URL is required.'});
+  const streams=await inspectRemoteMedia(target);
+  if(!streams.some(x=>x.codec_type==='audio')&&!streams.some(x=>x.codec_type==='subtitle'))return res.status(422).json({error:'No audio or subtitle tracks were found.'});
+  const token=randomUUID();
+  remoteMediaStore.set(token,{url:target,streams,expires:Date.now()+REMOTE_MEDIA_TTL});
+  const publicStreams=streams.filter(x=>x.codec_type==='audio'||x.codec_type==='subtitle').map(x=>({index:x.index,codec_type:x.codec_type,codec_name:x.codec_name||'',language:x.tags?.language||x.tags?.language_ietf||'',title:x.tags?.title||x.tags?.handler_name||'',channels:x.channels||0,channel_layout:x.channel_layout||'',sample_rate:x.sample_rate||''}));
+  res.json({token,expiresIn:REMOTE_MEDIA_TTL/1000,streams:publicStreams});
+ }catch(err){
+  const message=String(err?.message||'Could not inspect this media URL');
+  console.error(JSON.stringify({event:'remote-media-probe-error',message:message.slice(0,240)}));
+  res.status(422).json({error:message.includes('not allowed')?message:'Could not read tracks from this URL. The link may have expired or the server may not support this source.'});
+ }
+});
+app.get('/api/remote-audio/:token',async(req,res)=>{
+ remoteCors(req,res);
+ const item=remoteMediaGet(req.params.token);
+ if(!item)return res.status(410).json({error:'Remote media session expired. Load the video again.'});
+ const track=Number(req.query.track??-1);
+ const audio=item.streams.filter(x=>x.codec_type==='audio');
+ if(!Number.isInteger(track)||track<0||track>=audio.length)return res.status(400).json({error:'Invalid audio track.'});
+ const stream=audio[track];
+ const ff=spawn('ffmpeg',['-hide_banner','-loglevel','error','-rw_timeout','20000000','-i',item.url,'-map','0:'+String(stream.index),'-vn','-sn','-dn','-c:a','aac','-b:a','192k','-movflags','+frag_keyframe+empty_moov+default_base_moof','-f','mp4','pipe:1'],{stdio:['ignore','pipe','pipe']});
+ let stderr='';
+ ff.stderr.on('data',chunk=>{stderr+=chunk.toString();if(stderr.length>8000)stderr=stderr.slice(-8000)});
+ ff.once('error',err=>{console.error(JSON.stringify({event:'remote-audio-error',track,error:String(err?.message||err)}));if(!res.headersSent)res.status(502).end('Audio extraction failed');else res.destroy(err)});
+ ff.once('close',code=>{if(code!==0)console.error(JSON.stringify({event:'remote-audio-exit',track,code,stderr:stderr.slice(-1500)}))});
+ res.status(200);res.setHeader('Content-Type','audio/mp4');res.setHeader('Cache-Control','no-store');res.setHeader('X-StreamVG-Audio-Track',String(track));
+ ff.stdout.pipe(res);
+ req.on('close',()=>{if(!res.writableEnded&&!ff.killed)ff.kill('SIGTERM')});
+});
+app.get('/api/remote-subtitle/:token/:track',async(req,res)=>{
+ remoteCors(req,res);
+ const item=remoteMediaGet(req.params.token);
+ if(!item)return res.status(410).send('Remote media session expired.');
+ const track=Number(req.params.track),subs=item.streams.filter(x=>x.codec_type==='subtitle');
+ if(!Number.isInteger(track)||track<0||track>=subs.length)return res.status(400).send('Invalid subtitle track.');
+ const stream=subs[track],codec=String(stream.codec_name||'').toLowerCase();
+ const textCodecs=new Set(['subrip','ass','ssa','mov_text','webvtt','text','ttml','srt']);
+ if(!textCodecs.has(codec))return res.status(415).send('This subtitle is image-based and cannot be shown as text.');
+ try{
+  const{stdout}=await execFileAsync('ffmpeg',['-hide_banner','-loglevel','error','-rw_timeout','20000000','-i',item.url,'-map','0:'+String(stream.index),'-c:s','webvtt','-f','webvtt','pipe:1'],{timeout:120000,maxBuffer:12*1024*1024,encoding:'buffer'});
+  res.status(200);res.setHeader('Content-Type','text/vtt; charset=utf-8');res.setHeader('Cache-Control','no-store');res.send(stdout);
+ }catch(err){
+  console.error(JSON.stringify({event:'remote-subtitle-error',track,codec,error:String(err?.message||err).slice(0,1200)}));
+  res.status(422).send('Could not convert this subtitle track.');
+ }
+});
+
 const localMediaStore=new Map();
 const LOCAL_MEDIA_TTL=8*60*60*1000;
 const LOCAL_MEDIA_DIR='/tmp/streamvg-local';
@@ -285,6 +348,7 @@ const extractMedia=(html,base)=>{
 };
 
 setInterval(()=>{const now=Date.now();for(const[token,item]of localMediaStore)if(item.expires<now)localMediaCleanup(token)},60000).unref();
+setInterval(()=>{const now=Date.now();for(const[token,item]of remoteMediaStore)if(item.expires<now)remoteMediaStore.delete(token)},60000).unref();
 setInterval(()=>{const now=Date.now();for(const[k,v]of rate)if(now-v.at>RATE_WINDOW*2)rate.delete(k)},RATE_WINDOW*2).unref();
 const API_PUBLIC=(process.env.PUBLIC_API_URL||'https://streamvg-web-production-22879f12.up.railway.app').replace(/\/$/,'');
 setInterval(()=>{const now=Date.now();for(const[k,v]of relayStore)if(v.expires<now)relayStore.delete(k)},60000).unref();
