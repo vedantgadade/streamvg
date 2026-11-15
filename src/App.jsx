@@ -22,7 +22,7 @@ export default function App(){
  const [history,setHistory]=useState(()=>{try{return JSON.parse(localStorage.getItem(HIST)||'[]')}catch{return[]}});
  const [stats,setStats]=useState({resolution:'—',bitrate:'—',bandwidth:'—',buffer:'0.0s',dropped:0,codec:'—'});
  const [resume,setResume]=useState(null);
- const ffmpegRef=useRef(null),ffmpegLoadRef=useRef(null),localFileRef=useRef(null),localInputNameRef=useRef('input.bin'),localStreamsRef=useRef([]),localAudioCache=useRef(new Map()),localSubtitleCache=useRef(new Map()),audioContextRef=useRef(null),audioMediaNodeRef=useRef(null),soundBassRef=useRef(null),soundVoiceRef=useRef(null),soundCompressorRef=useRef(null),soundGraphsRef=useRef(new WeakMap()),localServerSessionRef=useRef(null),remoteMediaRef=useRef(null),remoteSeekRef=useRef(null),remoteSeekKeyRef=useRef(''),sideSeekTimer=useRef(null),sideSeekInterval=useRef(null),sideSeekDirection=useRef(0);
+ const ffmpegRef=useRef(null),ffmpegLoadRef=useRef(null),localFileRef=useRef(null),localInputNameRef=useRef('input.bin'),localStreamsRef=useRef([]),localAudioCache=useRef(new Map()),localSubtitleCache=useRef(new Map()),audioContextRef=useRef(null),audioMediaNodeRef=useRef(null),soundBassRef=useRef(null),soundVoiceRef=useRef(null),soundCompressorRef=useRef(null),soundGraphsRef=useRef(new WeakMap()),localServerSessionRef=useRef(null),remoteMediaRef=useRef(null),sideSeekTimer=useRef(null),sideSeekInterval=useRef(null),sideSeekDirection=useRef(0);
  const [mkvBusy,setMkvBusy]=useState(false),[mkvStatus,setMkvStatus]=useState(''),[localAudioSource,setLocalAudioSource]=useState('');
  const [remoteSession,setRemoteSession]=useState(''),[remoteMessage,setRemoteMessage]=useState('');
  const sourceRef=useRef('');
