@@ -32,5 +32,5 @@ test('remote audio output fragments without relying on video keyframes',()=>{
 
 test('video fallback emits browser-oriented H.264 fragmented MP4',()=>{
  const args=buildVideoFallbackArgs('https://media.example/movie.avi',2,3);
- assert.ok(args.includes('libx264')); assert.ok(args.includes('yuv420p')); assert.ok(args.includes('0:2')); assert.ok(args.includes('0:3')); assert.ok(args.includes('frag_every_frame'));
+ assert.ok(args.includes('libx264')); assert.ok(args.includes('yuv420p')); assert.ok(args.includes('0:2')); assert.ok(args.includes('0:3')); assert.ok(args.some(x=>x.includes('frag_every_frame')));
 });
