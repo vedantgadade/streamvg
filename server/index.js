@@ -20,6 +20,29 @@ const REMOTE_TTL=15*60*1000;
 const remoteGet=code=>{const item=remoteSessions.get(code);if(!item||item.expires<Date.now()){remoteSessions.delete(code);return null}return item};
 const relay=(url,headers={})=>{const token=randomUUID();relayStore.set(token,{url,headers,expires:Date.now()+10*60*1000});return token};
 const relayGet=token=>{const x=relayStore.get(token);if(!x||x.expires<Date.now()){relayStore.delete(token);return null}return x};
+const API_PUBLIC=(process.env.PUBLIC_API_URL||'https://streamvg-web-production-22879f12.up.railway.app').replace(/\/$/,'');
+const remoteInputHeaders=headers=>{
+ const allowed=new Set(['user-agent','referer','origin','cookie','authorization','accept','accept-language']);
+ return Object.entries(headers||{}).filter(([k,v])=>allowed.has(k.toLowerCase())&&v!=null&&String(v).length<8192)
+  .map(([k,v])=>k+': '+String(v)).join('\r\n')+'\r\n';
+};
+const resolveRemoteInput=async target=>{
+ const u=new URL(target),api=new URL(API_PUBLIC);
+ if(u.origin===api.origin&&u.pathname.startsWith('/api/stream/')){
+  const token=u.pathname.split('/').filter(Boolean).at(-1),relayItem=relayGet(token);
+  if(!relayItem)throw new Error('The relayed source session expired. Reload the movie.');
+  const source=new URL(relayItem.url);
+  if(!['http:','https:'].includes(source.protocol)||source.username||source.password||await blockedHost(source.hostname))throw new Error('The original media source is not allowed.');
+  return {url:source.href,headers:relayItem.headers||{}};
+ }
+ if(u.origin===api.origin&&u.pathname==='/api/proxy'&&u.searchParams.has('url')){
+  const source=new URL(u.searchParams.get('url'));
+  if(!['http:','https:'].includes(source.protocol)||source.username||source.password||await blockedHost(source.hostname))throw new Error('The original media source is not allowed.');
+  return {url:source.href,headers:{}};
+ }
+ if(!['http:','https:'].includes(u.protocol)||u.username||u.password||await blockedHost(u.hostname))throw new Error('This media URL is not allowed.');
+ return {url:u.href,headers:{}};
+};
 const RATE_WINDOW=60000;
 const RATE_LIMIT=300;
 const clientIp=req=>(req.headers['x-forwarded-for']||req.socket.remoteAddress||'unknown').toString().split(',')[0].trim();
@@ -61,21 +84,23 @@ const remoteMediaStore=new Map();
 const REMOTE_MEDIA_TTL=30*60*1000;
 const remoteMediaGet=token=>{const item=remoteMediaStore.get(token);if(!item||item.expires<Date.now()){remoteMediaStore.delete(token);return null}item.expires=Date.now()+REMOTE_MEDIA_TTL;return item};
 const inspectRemoteMedia=async target=>{
- const u=new URL(target);
- if(!['http:','https:'].includes(u.protocol)||u.username||u.password||await blockedHost(u.hostname))throw new Error('This media URL is not allowed.');
- const{stdout}=await execFileAsync('ffprobe',['-v','error','-rw_timeout','30000000','-probesize','100M','-analyzeduration','100M','-show_streams','-show_format','-of','json',target],{timeout:90000,maxBuffer:20*1024*1024});
+ const input=await resolveRemoteInput(target),headers=remoteInputHeaders(input.headers);
+ const args=['-v','error'];
+ if(headers.trim())args.push('-headers',headers);
+ args.push('-rw_timeout','30000000','-probesize','100M','-analyzeduration','100M','-show_streams','-show_format','-of','json',input.url);
+ const{stdout}=await execFileAsync('ffprobe',args,{timeout:90000,maxBuffer:20*1024*1024});
  const data=JSON.parse(stdout||'{}');
- return Array.isArray(data.streams)?data.streams:[];
+ return {streams:Array.isArray(data.streams)?data.streams:[],url:input.url,headers:input.headers};
 };
 app.post('/api/remote-media-session',async(req,res)=>{
  remoteCors(req,res);
  try{
   const target=String(req.body?.url||'').trim();
   if(!target||target.length>8192)return res.status(400).json({error:'A valid media URL is required.'});
-  const streams=await inspectRemoteMedia(target);
+  const inspected=await inspectRemoteMedia(target),streams=inspected.streams;
   if(!streams.some(x=>x.codec_type==='audio')&&!streams.some(x=>x.codec_type==='subtitle'))return res.status(422).json({error:'No audio or subtitle tracks were found.'});
   const token=randomUUID();
-  remoteMediaStore.set(token,{url:target,streams,expires:Date.now()+REMOTE_MEDIA_TTL});
+  remoteMediaStore.set(token,{url:inspected.url,headers:inspected.headers,streams,expires:Date.now()+REMOTE_MEDIA_TTL});
   const publicStreams=streams.filter(x=>x.codec_type==='audio'||x.codec_type==='subtitle').map(x=>({index:x.index,codec_type:x.codec_type,codec_name:x.codec_name||'',language:x.tags?.language||x.tags?.language_ietf||'',title:x.tags?.title||x.tags?.handler_name||'',channels:x.channels||0,channel_layout:x.channel_layout||'',sample_rate:x.sample_rate||''}));
   res.json({token,expiresIn:REMOTE_MEDIA_TTL/1000,streams:publicStreams});
  }catch(err){
@@ -92,7 +117,11 @@ app.get('/api/remote-audio/:token',async(req,res)=>{
  const audio=item.streams.filter(x=>x.codec_type==='audio');
  if(!Number.isInteger(track)||track<0||track>=audio.length)return res.status(400).json({error:'Invalid audio track.'});
  const stream=audio[track];
- const ff=spawn('ffmpeg',['-hide_banner','-loglevel','error','-rw_timeout','20000000','-i',item.url,'-map','0:'+String(stream.index),'-vn','-sn','-dn','-map_metadata','-1','-c:a','aac','-profile:a','aac_low','-b:a','192k','-ac','2','-ar','48000','-af','aresample=async=1:first_pts=0','-movflags','+empty_moov+default_base_moof','-frag_duration','1000000','-f','mp4','pipe:1'],{stdio:['ignore','pipe','pipe']});
+ const ffHeaders=remoteInputHeaders(item.headers);
+ const ffArgs=['-hide_banner','-loglevel','error'];
+ if(ffHeaders.trim())ffArgs.push('-headers',ffHeaders);
+ ffArgs.push('-rw_timeout','20000000','-i',item.url,'-map','0:'+String(stream.index),'-vn','-sn','-dn','-map_metadata','-1','-c:a','aac','-profile:a','aac_low','-b:a','192k','-ac','2','-ar','48000','-af','aresample=async=1:first_pts=0','-movflags','+empty_moov+default_base_moof','-frag_duration','1000000','-f','mp4','pipe:1');
+ const ff=spawn('ffmpeg',ffArgs,{stdio:['ignore','pipe','pipe']});
  let stderr='';
  ff.stderr.on('data',chunk=>{stderr+=chunk.toString();if(stderr.length>8000)stderr=stderr.slice(-8000)});
  ff.once('error',err=>{console.error(JSON.stringify({event:'remote-audio-error',track,error:String(err?.message||err)}));if(!res.headersSent)res.status(502).end('Audio extraction failed');else res.destroy(err)});
@@ -364,6 +393,5 @@ const extractMedia=(html,base)=>{
 setInterval(()=>{const now=Date.now();for(const[token,item]of localMediaStore)if(item.expires<now)localMediaCleanup(token)},60000).unref();
 setInterval(()=>{const now=Date.now();for(const[token,item]of remoteMediaStore)if(item.expires<now)remoteMediaStore.delete(token)},60000).unref();
 setInterval(()=>{const now=Date.now();for(const[k,v]of rate)if(now-v.at>RATE_WINDOW*2)rate.delete(k)},RATE_WINDOW*2).unref();
-const API_PUBLIC=(process.env.PUBLIC_API_URL||'https://streamvg-web-production-22879f12.up.railway.app').replace(/\/$/,'');
 setInterval(()=>{const now=Date.now();for(const[k,v]of relayStore)if(v.expires<now)relayStore.delete(k)},60000).unref();
 const port=process.env.PORT||3000;createServer(app).listen(port,()=>console.log('StreamVG listening on '+port));
