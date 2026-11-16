@@ -65,7 +65,13 @@ export default function App(){
    setAudioTrack(-1);
    setCaptionTracks(subs.map((x,i)=>({i,label:x.title||x.language||('Subtitle '+(i+1)),lang:x.language||'',codec:x.codec_name||''})));
    setCaptionTrack(-1);
-   setMkvStatus(audios.length+' audio track(s), '+subs.length+' subtitle track(s) found');
+   const remotePath=(new URL(current)).pathname.toLowerCase();
+   const browserIncompatibleAudio=audios.some(t=>/^(ac3|eac3|ec-3|truehd|mlp|dts|dca|dts_hd|pcm_)/i.test(t.codec_name||''));
+   const shouldTranscodeAudio=audios.length>0&&(remotePath.endsWith('.mkv')||browserIncompatibleAudio);
+   if(shouldTranscodeAudio){
+    setMkvStatus('Converting remote audio to browser-compatible AAC…');
+    changeAudio(0);
+   }else setMkvStatus(audios.length+' audio track(s), '+subs.length+' subtitle track(s) found');
   }catch(e){console.warn('[StreamVG][remote-media] Track scan failed:',e?.message||e);setMkvStatus('Original playback is active. Remote track scan was not available.')}
  };
 
