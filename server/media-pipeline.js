@@ -3,7 +3,7 @@
 const AUDIO_DIRECT = new Set(['aac','mp3','opus','vorbis']);
 const VIDEO_DIRECT = new Set(['h264','av1','vp9']);
 const AUDIO_TRANSCODE = new Set(['ac3','eac3','dts','dts_hd','truehd','mlp','flac','alac','pcm_s16le','pcm_s24le','pcm_s32le','pcm_f32le','pcm_s16be','pcm_s24be','pcm_s32be','pcm_u8']);
-export function normalizeCodec(value='') { return String(value).trim().toLowerCase().replace(/^avc1(?:\\..*)?$/,'h264').replace(/^hev1(?:\\..*)?$/,'hevc').replace(/^hvc1(?:\\..*)?$/,'hevc').replace(/^av01(?:\\..*)?$/,'av1').replace(/^vp09(?:\\..*)?$/,'vp9'); }
+export function normalizeCodec(value='') { return String(value).trim().toLowerCase().replace(/^avc1(?:\..*)?$/,'h264').replace(/^hev1(?:\..*)?$/,'hevc').replace(/^hvc1(?:\..*)?$/,'hevc').replace(/^av01(?:\..*)?$/,'av1').replace(/^vp09(?:\..*)?$/,'vp9'); }
 export function planMediaCompatibility({formatName='',videoCodec='',audioCodecs=[]}={}) {
  const formats=String(formatName).toLowerCase().split(',');
  const containerNeedsRemux=formats.some(x=>['matroska','webm','avi','mpegts','mpeg'].includes(x));
