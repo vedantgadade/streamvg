@@ -14,7 +14,7 @@ export function planMediaCompatibility({formatName='',videoCodec='',audioCodecs=
 }
 // Audio-only MP4 must fragment by duration/packet, not keyframes: it has no video keyframes.
 export function buildRemoteAudioArgs(inputUrl,streamIndex,{bitrate='192k',channels=2,start=0}={}) {
- return ['-hide_banner','-loglevel','warning','-nostdin','-rw_timeout','20000000','-reconnect','1','-reconnect_streamed','1','-reconnect_delay_max','5','-i',inputUrl,'-map','0:'+Number(streamIndex),'-vn','-sn','-dn','-map_metadata','-1','-c:a','aac','-b:a',bitrate,'-ac',String(channels),'-af','aresample=async=1:first_pts=0','-movflags','+empty_moov+default_base_moof+frag_every_frame','-frag_duration','1000000','-flush_packets','1','-f','mp4','pipe:1'];
+ return ['-hide_banner','-loglevel','warning','-nostdin','-rw_timeout','20000000','-reconnect','1','-reconnect_streamed','1','-reconnect_delay_max','5','-i',inputUrl,...(Number.isFinite(Number(start))&&Number(start)>0?['-ss',String(Math.max(0,Number(start)))]:[]),'-map','0:'+Number(streamIndex),'-vn','-sn','-dn','-map_metadata','-1','-c:a','aac','-b:a',bitrate,'-ac',String(channels),'-af','aresample=async=1:first_pts=0','-movflags','+empty_moov+default_base_moof+frag_every_frame','-frag_duration','1000000','-flush_packets','1','-f','mp4','pipe:1'];
 }
 export function buildVideoFallbackArgs(inputUrl,videoIndex,audioIndex=null) {
  const args=['-hide_banner','-loglevel','warning','-nostdin','-rw_timeout','20000000','-reconnect','1','-reconnect_streamed','1','-reconnect_delay_max','5','-i',inputUrl,'-map','0:'+Number(videoIndex)];
