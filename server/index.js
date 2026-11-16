@@ -78,11 +78,11 @@ app.get('/api/remote-audio/:token',async(req,res)=>{
  const audio=item.streams.filter(x=>x.codec_type==='audio');
  if(!Number.isInteger(track)||track<0||track>=audio.length)return res.status(400).json({error:'Invalid audio track.'});
  const stream=audio[track];
- const ff=spawn('ffmpeg',['-hide_banner','-loglevel','error','-rw_timeout','20000000','-i',item.url,'-map','0:'+String(stream.index),'-vn','-sn','-dn','-c:a','aac','-b:a','192k','-movflags','+frag_keyframe+empty_moov+default_base_moof','-f','mp4','pipe:1'],{stdio:['ignore','pipe','pipe']});
+ const ff=spawn('ffmpeg',['-hide_banner','-loglevel','error','-rw_timeout','20000000','-i',item.url,'-map','0:'+String(stream.index),'-vn','-sn','-dn','-map_metadata','-1','-c:a','aac','-profile:a','aac_low','-b:a','192k','-ac','2','-ar','48000','-af','aresample=async=1:first_pts=0','-movflags','+empty_moov+default_base_moof','-frag_duration','1000000','-f','mp4','pipe:1'],{stdio:['ignore','pipe','pipe']});
  let stderr='';
  ff.stderr.on('data',chunk=>{stderr+=chunk.toString();if(stderr.length>8000)stderr=stderr.slice(-8000)});
  ff.once('error',err=>{console.error(JSON.stringify({event:'remote-audio-error',track,error:String(err?.message||err)}));if(!res.headersSent)res.status(502).end('Audio extraction failed');else res.destroy(err)});
- ff.once('close',code=>{if(code!==0)console.error(JSON.stringify({event:'remote-audio-exit',track,code,stderr:stderr.slice(-1500)}))});
+ ff.once('close',(code,signal)=>{if(code!==0)console.error(JSON.stringify({event:'remote-audio-exit',track,code,signal,stderr:stderr.slice(-1500)}))});
  res.status(200);res.setHeader('Content-Type','audio/mp4');res.setHeader('Cache-Control','no-store');res.setHeader('X-StreamVG-Audio-Track',String(track));
  ff.stdout.pipe(res);
  res.on('close',()=>{if(!res.writableEnded&&!ff.killed)ff.kill('SIGTERM')});
