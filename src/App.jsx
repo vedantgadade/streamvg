@@ -67,7 +67,7 @@ export default function App(){
    const audios=(d.streams||[]).filter(x=>x.codec_type==='audio');
    const subs=(d.streams||[]).filter(x=>x.codec_type==='subtitle');
    setAudioTracks(audios.map((x,i)=>({i,label:x.title||x.language||('Audio '+(i+1)),lang:x.language||'',codec:x.codec_name||'',channels:x.channels||0})));
-   setAudioTrack(-1);
+   if(audios.length)changeAudio(0);else setAudioTrack(-1);
    setCaptionTracks(subs.map((x,i)=>({i,label:x.title||x.language||('Subtitle '+(i+1)),lang:x.language||'',codec:x.codec_name||''})));
    setCaptionTrack(-1);
    setMkvStatus(audios.length+' audio track(s), '+subs.length+' subtitle track(s) found');
