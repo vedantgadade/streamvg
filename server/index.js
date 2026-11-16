@@ -23,34 +23,21 @@ const relayGet=token=>{const x=relayStore.get(token);if(!x||x.expires<Date.now()
 const RATE_WINDOW=60000;
 const RATE_LIMIT=300;
 const clientIp=req=>(req.headers['x-forwarded-for']||req.socket.remoteAddress||'unknown').toString().split(',')[0].trim();
-const setMediaCors=(req,res)=>{
- const origin=String(req.headers.origin||'');
- try{
-  const u=new URL(origin);
-  if(u.protocol==='https:'&&(u.hostname==='streamvg.pages.dev'||u.hostname.endsWith('.streamvg.pages.dev'))){
-   res.setHeader('Access-Control-Allow-Origin',origin);
-   res.setHeader('Vary','Origin');
-  }
- }catch{}
- res.setHeader('Access-Control-Allow-Methods','GET,POST,OPTIONS');
- res.setHeader('Access-Control-Allow-Headers','Content-Type,Range,X-StreamVG-File-Name');
- res.setHeader('Cache-Control','no-store');
-};
 
 const allowApi=(req,res,next)=>{
  const now=Date.now(),ip=clientIp(req),x=rate.get(ip)||{at:now,count:0};
  if(now-x.at>RATE_WINDOW){x.at=now;x.count=0}
  x.count++;rate.set(ip,x);
  if(x.count>RATE_LIMIT)return res.status(429).json({error:'Too many requests. Try again shortly.'});
- setMediaCors(req,res);
+ res.setHeader('Access-Control-Allow-Origin','https://streamvg.pages.dev');
  res.setHeader('Access-Control-Allow-Methods','GET,OPTIONS');
  res.setHeader('Access-Control-Allow-Headers','Range,Content-Type');
  next();
 };
 app.use('/api',express.json({limit:'16kb'}));
-app.options('/api/*splat',(req,res)=>{setMediaCors(req,res);res.sendStatus(204)});
+app.options('/api/*splat',(req,res)=>{res.setHeader('Access-Control-Allow-Origin','https://streamvg.pages.dev');res.setHeader('Access-Control-Allow-Methods','GET,POST,OPTIONS');res.setHeader('Access-Control-Allow-Headers','Content-Type,Range,X-StreamVG-File-Name');res.sendStatus(204)});
 
-const remoteCors=(req,res)=>setMediaCors(req,res);
+const remoteCors=(req,res)=>{res.setHeader('Access-Control-Allow-Origin','https://streamvg.pages.dev');res.setHeader('Access-Control-Allow-Methods','GET,POST,OPTIONS');res.setHeader('Access-Control-Allow-Headers','Content-Type');res.setHeader('Cache-Control','no-store')};
 app.post('/api/remote/create',(req,res)=>{remoteCors(req,res);if(remoteSessions.size>500)for(const[k,v]of remoteSessions)if(v.expires<Date.now())remoteSessions.delete(k);const code=randomUUID().replace(/-/g,'');remoteSessions.set(code,{expires:Date.now()+REMOTE_TTL,pendingUrl:'',createdAt:Date.now()});res.json({code,expiresIn:REMOTE_TTL/1000})});
 app.get('/api/remote/:code/poll',(req,res)=>{remoteCors(req,res);const item=remoteGet(req.params.code);if(!item)return res.status(410).json({error:'This TV connection has expired. Create a new QR code.'});const url=item.pendingUrl;item.pendingUrl='';res.json({url:url||null,expiresIn:Math.max(0,Math.floor((item.expires-Date.now())/1000))})});
 app.post('/api/remote/:code/play',(req,res)=>{remoteCors(req,res);const item=remoteGet(req.params.code);if(!item)return res.status(410).json({error:'This TV connection has expired. Scan a new QR code.'});const value=String(req.body?.url||'').trim();if(value.length>8192)return res.status(413).json({error:'The video URL is too long.'});try{const parsed=new URL(value);if(!['http:','https:'].includes(parsed.protocol))throw new Error()}catch{return res.status(400).json({error:'Please send a valid http or https video URL.'})}item.pendingUrl=value;res.json({ok:true})});
@@ -91,14 +78,14 @@ app.get('/api/remote-audio/:token',async(req,res)=>{
  const audio=item.streams.filter(x=>x.codec_type==='audio');
  if(!Number.isInteger(track)||track<0||track>=audio.length)return res.status(400).json({error:'Invalid audio track.'});
  const stream=audio[track];
- const ff=spawn('ffmpeg',['-hide_banner','-loglevel','warning','-rw_timeout','30000000','-i',item.url,'-map','0:'+String(stream.index),'-vn','-sn','-dn','-ac','2','-ar','48000','-c:a','aac','-profile:a','aac_low','-b:a','192k','-movflags','+empty_moov+default_base_moof','-frag_duration','1000000','-f','mp4','pipe:1'],{stdio:['ignore','pipe','pipe']});
+ const ff=spawn('ffmpeg',['-hide_banner','-loglevel','error','-rw_timeout','20000000','-i',item.url,'-map','0:'+String(stream.index),'-vn','-sn','-dn','-c:a','aac','-b:a','192k','-movflags','+frag_keyframe+empty_moov+default_base_moof','-f','mp4','pipe:1'],{stdio:['ignore','pipe','pipe']});
  let stderr='';
  ff.stderr.on('data',chunk=>{stderr+=chunk.toString();if(stderr.length>8000)stderr=stderr.slice(-8000)});
  ff.once('error',err=>{console.error(JSON.stringify({event:'remote-audio-error',track,error:String(err?.message||err)}));if(!res.headersSent)res.status(502).end('Audio extraction failed');else res.destroy(err)});
  ff.once('close',code=>{if(code!==0)console.error(JSON.stringify({event:'remote-audio-exit',track,code,stderr:stderr.slice(-1500)}))});
  res.status(200);res.setHeader('Content-Type','audio/mp4');res.setHeader('Cache-Control','no-store');res.setHeader('X-StreamVG-Audio-Track',String(track));
  ff.stdout.pipe(res);
- res.on('close',()=>{if(!res.writableEnded&&!ff.killed)ff.kill('SIGTERM')});
+ req.on('close',()=>{if(!res.writableEnded&&!ff.killed)ff.kill('SIGTERM')});
 });
 app.get('/api/remote-subtitle/:token/:track',async(req,res)=>{
  remoteCors(req,res);
@@ -131,7 +118,9 @@ const localMediaCleanup=async token=>{
 };
 
 app.post('/api/local-session',async(req,res)=>{
- setMediaCors(req,res);
+ res.setHeader('Access-Control-Allow-Origin','https://streamvg.pages.dev');
+ res.setHeader('Access-Control-Allow-Methods','POST,OPTIONS');
+ res.setHeader('Access-Control-Allow-Headers','Content-Type');
  const declared=Number(req.headers['content-length']||0);
  if(declared>LOCAL_MEDIA_MAX)return res.status(413).json({error:'Local file is too large for the server media engine.'});
  const token=randomUUID(),filePath=path.join(LOCAL_MEDIA_DIR,token+'.media');
@@ -162,7 +151,8 @@ app.post('/api/local-session',async(req,res)=>{
 });
 
 app.get('/api/local-audio/:token',async(req,res)=>{
- setMediaCors(req,res);
+ res.setHeader('Access-Control-Allow-Origin','https://streamvg.pages.dev');
+ res.setHeader('Access-Control-Allow-Methods','GET,OPTIONS');
  const item=localMediaStore.get(req.params.token);
  if(!item||item.expires<Date.now()){if(item)await localMediaCleanup(req.params.token);return res.status(410).json({error:'Local media session expired.'})}
  item.expires=Date.now()+LOCAL_MEDIA_TTL;
@@ -171,7 +161,7 @@ app.get('/api/local-audio/:token',async(req,res)=>{
  if(!Number.isInteger(track)||track<0||track>=audio.length)return res.status(400).json({error:'Invalid audio track.'});
  const stream=audio[track],codec=String(stream.codec_name||'');
  console.log(JSON.stringify({event:'local-audio-extraction-start',token:req.params.token,track,codec}));
- const ff=spawn('ffmpeg',['-hide_banner','-loglevel','info','-i',item.path,'-map','0:a:'+track,'-vn','-ac','2','-ar','48000','-c:a','aac','-b:a','192k','-movflags','+empty_moov+default_base_moof','-frag_duration','1000000','-f','mp4','pipe:1'],{stdio:['ignore','pipe','pipe']});
+ const ff=spawn('ffmpeg',['-hide_banner','-loglevel','info','-i',item.path,'-map','0:a:'+track,'-vn','-c:a','aac','-b:a','192k','-movflags','+frag_keyframe+empty_moov+default_base_moof','-f','mp4','pipe:1'],{stdio:['ignore','pipe','pipe']});
  let stderr='';
  ff.stderr.on('data',chunk=>{stderr+=chunk.toString();if(stderr.length>12000)stderr=stderr.slice(-12000)});
  ff.once('error',err=>{console.error(JSON.stringify({event:'local-audio-extraction-error',token:req.params.token,track,codec,error:String(err?.stack||err)}));if(!res.headersSent)res.status(500).json({error:String(err?.message||'FFmpeg could not start')});else res.destroy(err)});
@@ -182,7 +172,7 @@ app.get('/api/local-audio/:token',async(req,res)=>{
  res.setHeader('X-StreamVG-Audio-Codec',codec);
  res.setHeader('X-StreamVG-Audio-Track',String(track));
  ff.stdout.pipe(res);
- res.on('close',()=>{if(!res.writableEnded&&!ff.killed)ff.kill('SIGTERM')});
+ req.on('close',()=>{if(!res.writableEnded&&!ff.killed)ff.kill('SIGTERM')});
 });
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..','dist');
