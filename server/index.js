@@ -82,9 +82,11 @@ app.get('/api/remote-audio/:token',async(req,res)=>{
  const audio=item.streams.filter(x=>x.codec_type==='audio');
  if(!Number.isInteger(track)||track<0||track>=audio.length)return res.status(400).json({error:'Invalid audio track.'});
  const stream=audio[track];
+ const start=Number(req.query.start??0);
+ if(!Number.isFinite(start)||start<0||start>86400)return res.status(400).json({error:'Invalid audio start time.'});
  // Audio-only fragmented MP4 must flush fragments by time/packet. Keyframe-based
  // fragmentation never emits media fragments when there is no video stream.
- const ff=spawn('ffmpeg',buildRemoteAudioArgs(item.url,stream.index),{stdio:['ignore','pipe','pipe']});
+ const ff=spawn('ffmpeg',buildRemoteAudioArgs(item.url,stream.index,{start}),{stdio:['ignore','pipe','pipe']});
  let stderr='';
  ff.stderr.on('data',chunk=>{stderr+=chunk.toString();if(stderr.length>8000)stderr=stderr.slice(-8000)});
  ff.once('error',err=>{console.error(JSON.stringify({event:'remote-audio-error',track,error:String(err?.message||err)}));if(!res.headersSent)res.status(502).end('Audio extraction failed');else res.destroy(err)});
