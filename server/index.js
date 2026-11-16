@@ -87,11 +87,12 @@ app.get('/api/remote-audio/:token',async(req,res)=>{
  remoteCors(req,res);
  const item=remoteMediaGet(req.params.token);
  if(!item)return res.status(410).json({error:'Remote media session expired. Load the video again.'});
- const track=Number(req.query.track??-1);
+ const track=Number(req.query.track??-1),start=Number(req.query.start??0);
  const audio=item.streams.filter(x=>x.codec_type==='audio');
  if(!Number.isInteger(track)||track<0||track>=audio.length)return res.status(400).json({error:'Invalid audio track.'});
+ if(!Number.isFinite(start)||start<0||start>86400)return res.status(400).json({error:'Invalid audio start time.'});
  const stream=audio[track];
- const ff=spawn('ffmpeg',['-hide_banner','-loglevel','warning','-rw_timeout','30000000','-i',item.url,'-map','0:'+String(stream.index),'-vn','-sn','-dn','-ac','2','-ar','48000','-c:a','aac','-profile:a','aac_low','-b:a','192k','-movflags','+empty_moov+default_base_moof','-frag_duration','1000000','-f','mp4','pipe:1'],{stdio:['ignore','pipe','pipe']});
+ const ff=spawn('ffmpeg',['-hide_banner','-loglevel','warning','-rw_timeout','30000000',...(start>0?['-ss',start.toFixed(3)]:[]),'-i',item.url,'-map','0:'+String(stream.index),'-vn','-sn','-dn','-ac','2','-ar','48000','-c:a','aac','-profile:a','aac_low','-b:a','192k','-movflags','+empty_moov+default_base_moof','-frag_duration','1000000','-f','mp4','pipe:1'],{stdio:['ignore','pipe','pipe']});
  let stderr='';
  ff.stderr.on('data',chunk=>{stderr+=chunk.toString();if(stderr.length>8000)stderr=stderr.slice(-8000)});
  ff.once('error',err=>{console.error(JSON.stringify({event:'remote-audio-error',track,error:String(err?.message||err)}));if(!res.headersSent)res.status(502).end('Audio extraction failed');else res.destroy(err)});
