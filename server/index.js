@@ -10,6 +10,7 @@ import { mkdir, unlink } from 'node:fs/promises';
 import { createWriteStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { spawn } from 'node:child_process';
+import { buildRemoteAudioArgs, planMediaCompatibility } from './media-pipeline.js';
 
 const execFileAsync=promisify(execFile);
 const app=express();
@@ -51,19 +52,22 @@ const inspectRemoteMedia=async target=>{
  if(!['http:','https:'].includes(u.protocol)||u.username||u.password||await blockedHost(u.hostname))throw new Error('This media URL is not allowed.');
  const{stdout}=await execFileAsync('ffprobe',['-v','error','-rw_timeout','30000000','-probesize','100M','-analyzeduration','100M','-show_streams','-show_format','-of','json',target],{timeout:90000,maxBuffer:20*1024*1024});
  const data=JSON.parse(stdout||'{}');
- return Array.isArray(data.streams)?data.streams:[];
+ return {streams:Array.isArray(data.streams)?data.streams:[],format:data.format||{}};
 };
 app.post('/api/remote-media-session',async(req,res)=>{
  remoteCors(req,res);
  try{
   const target=String(req.body?.url||'').trim();
   if(!target||target.length>8192)return res.status(400).json({error:'A valid media URL is required.'});
-  const streams=await inspectRemoteMedia(target);
-  if(!streams.some(x=>x.codec_type==='audio')&&!streams.some(x=>x.codec_type==='subtitle'))return res.status(422).json({error:'No audio or subtitle tracks were found.'});
+  const probe=await inspectRemoteMedia(target),streams=probe.streams;
+  if(!streams.some(x=>x.codec_type==='video')&&!streams.some(x=>x.codec_type==='audio'))return res.status(422).json({error:'No playable audio or video tracks were found.'});
   const token=randomUUID();
-  remoteMediaStore.set(token,{url:target,streams,expires:Date.now()+REMOTE_MEDIA_TTL});
-  const publicStreams=streams.filter(x=>x.codec_type==='audio'||x.codec_type==='subtitle').map(x=>({index:x.index,codec_type:x.codec_type,codec_name:x.codec_name||'',language:x.tags?.language||x.tags?.language_ietf||'',title:x.tags?.title||x.tags?.handler_name||'',channels:x.channels||0,channel_layout:x.channel_layout||'',sample_rate:x.sample_rate||''}));
-  res.json({token,expiresIn:REMOTE_MEDIA_TTL/1000,streams:publicStreams});
+  remoteMediaStore.set(token,{url:target,streams,format:probe.format,expires:Date.now()+REMOTE_MEDIA_TTL});
+  const publicStreams=streams.filter(x=>['video','audio','subtitle'].includes(x.codec_type)).map((x,i)=>({index:x.index,codec_type:x.codec_type,codec_name:x.codec_name||'',language:x.tags?.language||x.tags?.language_ietf||'',title:x.tags?.title||x.tags?.handler_name||'',channels:x.channels||0,channel_layout:x.channel_layout||'',sample_rate:x.sample_rate||'',width:x.width||0,height:x.height||0,profile:x.profile||''}));
+  const video=streams.find(x=>x.codec_type==='video');
+  const audio=streams.filter(x=>x.codec_type==='audio');
+  const compatibility=planMediaCompatibility({formatName:probe.format?.format_name||'',videoCodec:video?.codec_name||'',audioCodecs:audio.map(x=>x.codec_name||'')});
+  res.json({token,expiresIn:REMOTE_MEDIA_TTL/1000,format:{name:probe.format?.format_name||'',duration:probe.format?.duration||null,size:probe.format?.size||null},compatibility,streams:publicStreams});
  }catch(err){
   const message=String(err?.message||'Could not inspect this media URL');
   console.error(JSON.stringify({event:'remote-media-probe-error',message:message.slice(0,240)}));
@@ -78,7 +82,9 @@ app.get('/api/remote-audio/:token',async(req,res)=>{
  const audio=item.streams.filter(x=>x.codec_type==='audio');
  if(!Number.isInteger(track)||track<0||track>=audio.length)return res.status(400).json({error:'Invalid audio track.'});
  const stream=audio[track];
- const ff=spawn('ffmpeg',['-hide_banner','-loglevel','error','-rw_timeout','20000000','-i',item.url,'-map','0:'+String(stream.index),'-vn','-sn','-dn','-c:a','aac','-b:a','192k','-movflags','+frag_keyframe+empty_moov+default_base_moof','-f','mp4','pipe:1'],{stdio:['ignore','pipe','pipe']});
+ // Audio-only fragmented MP4 must flush fragments by time/packet. Keyframe-based
+ // fragmentation never emits media fragments when there is no video stream.
+ const ff=spawn('ffmpeg',buildRemoteAudioArgs(item.url,stream.index),{stdio:['ignore','pipe','pipe']});
  let stderr='';
  ff.stderr.on('data',chunk=>{stderr+=chunk.toString();if(stderr.length>8000)stderr=stderr.slice(-8000)});
  ff.once('error',err=>{console.error(JSON.stringify({event:'remote-audio-error',track,error:String(err?.message||err)}));if(!res.headersSent)res.status(502).end('Audio extraction failed');else res.destroy(err)});
