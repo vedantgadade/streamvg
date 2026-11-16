@@ -161,7 +161,7 @@ app.get('/api/local-audio/:token',async(req,res)=>{
  if(!Number.isInteger(track)||track<0||track>=audio.length)return res.status(400).json({error:'Invalid audio track.'});
  const stream=audio[track],codec=String(stream.codec_name||'');
  console.log(JSON.stringify({event:'local-audio-extraction-start',token:req.params.token,track,codec}));
- const ff=spawn('ffmpeg',['-hide_banner','-loglevel','info','-i',item.path,'-map','0:a:'+track,'-vn','-c:a','aac','-b:a','192k','-movflags','+frag_keyframe+empty_moov+default_base_moof','-f','mp4','pipe:1'],{stdio:['ignore','pipe','pipe']});
+ const ff=spawn('ffmpeg',['-hide_banner','-loglevel','info','-i',item.path,'-map','0:a:'+track,'-vn','-c:a','aac','-b:a','192k','-movflags','+empty_moov+default_base_moof','-frag_duration','1000000','-f','mp4','pipe:1'],{stdio:['ignore','pipe','pipe']});
  let stderr='';
  ff.stderr.on('data',chunk=>{stderr+=chunk.toString();if(stderr.length>12000)stderr=stderr.slice(-12000)});
  ff.once('error',err=>{console.error(JSON.stringify({event:'local-audio-extraction-error',token:req.params.token,track,codec,error:String(err?.stack||err)}));if(!res.headersSent)res.status(500).json({error:String(err?.message||'FFmpeg could not start')});else res.destroy(err)});
@@ -172,7 +172,7 @@ app.get('/api/local-audio/:token',async(req,res)=>{
  res.setHeader('X-StreamVG-Audio-Codec',codec);
  res.setHeader('X-StreamVG-Audio-Track',String(track));
  ff.stdout.pipe(res);
- req.on('close',()=>{if(!res.writableEnded&&!ff.killed)ff.kill('SIGTERM')});
+ res.on('close',()=>{if(!res.writableEnded&&!ff.killed)ff.kill('SIGTERM')});
 });
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..','dist');
