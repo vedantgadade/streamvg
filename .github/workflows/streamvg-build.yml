@@ -23,5 +23,7 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: Check backend syntax
         run: node --check server/index.js
+      - name: Test media compatibility pipeline
+        run: npm test
       - name: Build StreamVG
         run: npm run build
