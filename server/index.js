@@ -84,23 +84,21 @@ const remoteMediaStore=new Map();
 const REMOTE_MEDIA_TTL=30*60*1000;
 const remoteMediaGet=token=>{const item=remoteMediaStore.get(token);if(!item||item.expires<Date.now()){remoteMediaStore.delete(token);return null}item.expires=Date.now()+REMOTE_MEDIA_TTL;return item};
 const inspectRemoteMedia=async target=>{
- const input=await resolveRemoteInput(target),headers=remoteInputHeaders(input.headers);
- const args=['-v','error'];
- if(headers.trim())args.push('-headers',headers);
- args.push('-rw_timeout','30000000','-probesize','100M','-analyzeduration','100M','-show_streams','-show_format','-of','json',input.url);
- const{stdout}=await execFileAsync('ffprobe',args,{timeout:90000,maxBuffer:20*1024*1024});
+ const u=new URL(target);
+ if(!['http:','https:'].includes(u.protocol)||u.username||u.password||await blockedHost(u.hostname))throw new Error('This media URL is not allowed.');
+ const{stdout}=await execFileAsync('ffprobe',['-v','error','-rw_timeout','30000000','-probesize','100M','-analyzeduration','100M','-show_streams','-show_format','-of','json',target],{timeout:90000,maxBuffer:20*1024*1024});
  const data=JSON.parse(stdout||'{}');
- return {streams:Array.isArray(data.streams)?data.streams:[],url:input.url,headers:input.headers};
+ return Array.isArray(data.streams)?data.streams:[];
 };
 app.post('/api/remote-media-session',async(req,res)=>{
  remoteCors(req,res);
  try{
   const target=String(req.body?.url||'').trim();
   if(!target||target.length>8192)return res.status(400).json({error:'A valid media URL is required.'});
-  const inspected=await inspectRemoteMedia(target),streams=inspected.streams;
+  const streams=await inspectRemoteMedia(target);
   if(!streams.some(x=>x.codec_type==='audio')&&!streams.some(x=>x.codec_type==='subtitle'))return res.status(422).json({error:'No audio or subtitle tracks were found.'});
   const token=randomUUID();
-  remoteMediaStore.set(token,{url:inspected.url,headers:inspected.headers,streams,expires:Date.now()+REMOTE_MEDIA_TTL});
+  remoteMediaStore.set(token,{url:target,streams,expires:Date.now()+REMOTE_MEDIA_TTL});
   const publicStreams=streams.filter(x=>x.codec_type==='audio'||x.codec_type==='subtitle').map(x=>({index:x.index,codec_type:x.codec_type,codec_name:x.codec_name||'',language:x.tags?.language||x.tags?.language_ietf||'',title:x.tags?.title||x.tags?.handler_name||'',channels:x.channels||0,channel_layout:x.channel_layout||'',sample_rate:x.sample_rate||''}));
   res.json({token,expiresIn:REMOTE_MEDIA_TTL/1000,streams:publicStreams});
  }catch(err){
@@ -117,18 +115,14 @@ app.get('/api/remote-audio/:token',async(req,res)=>{
  const audio=item.streams.filter(x=>x.codec_type==='audio');
  if(!Number.isInteger(track)||track<0||track>=audio.length)return res.status(400).json({error:'Invalid audio track.'});
  const stream=audio[track];
- const ffHeaders=remoteInputHeaders(item.headers);
- const ffArgs=['-hide_banner','-loglevel','error'];
- if(ffHeaders.trim())ffArgs.push('-headers',ffHeaders);
- ffArgs.push('-rw_timeout','20000000','-i',item.url,'-map','0:'+String(stream.index),'-vn','-sn','-dn','-map_metadata','-1','-c:a','aac','-profile:a','aac_low','-b:a','192k','-ac','2','-ar','48000','-af','aresample=async=1:first_pts=0','-movflags','+empty_moov+default_base_moof','-frag_duration','1000000','-f','mp4','pipe:1');
- const ff=spawn('ffmpeg',ffArgs,{stdio:['ignore','pipe','pipe']});
+ const ff=spawn('ffmpeg',['-hide_banner','-loglevel','error','-rw_timeout','20000000','-i',item.url,'-map','0:'+String(stream.index),'-vn','-sn','-dn','-c:a','aac','-b:a','192k','-movflags','+frag_keyframe+empty_moov+default_base_moof','-f','mp4','pipe:1'],{stdio:['ignore','pipe','pipe']});
  let stderr='';
  ff.stderr.on('data',chunk=>{stderr+=chunk.toString();if(stderr.length>8000)stderr=stderr.slice(-8000)});
  ff.once('error',err=>{console.error(JSON.stringify({event:'remote-audio-error',track,error:String(err?.message||err)}));if(!res.headersSent)res.status(502).end('Audio extraction failed');else res.destroy(err)});
- ff.once('close',(code,signal)=>{if(code!==0)console.error(JSON.stringify({event:'remote-audio-exit',track,code,signal,stderr:stderr.slice(-1500)}))});
+ ff.once('close',code=>{if(code!==0)console.error(JSON.stringify({event:'remote-audio-exit',track,code,stderr:stderr.slice(-1500)}))});
  res.status(200);res.setHeader('Content-Type','audio/mp4');res.setHeader('Cache-Control','no-store');res.setHeader('X-StreamVG-Audio-Track',String(track));
  ff.stdout.pipe(res);
- res.on('close',()=>{if(!res.writableEnded&&!ff.killed)ff.kill('SIGTERM')});
+ req.on('close',()=>{if(!res.writableEnded&&!ff.killed)ff.kill('SIGTERM')});
 });
 app.get('/api/remote-subtitle/:token/:track',async(req,res)=>{
  remoteCors(req,res);
