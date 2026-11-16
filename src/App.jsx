@@ -67,7 +67,7 @@ export default function App(){
    setCaptionTrack(-1);
    const remotePath=(new URL(current)).pathname.toLowerCase();
    const browserIncompatibleAudio=audios.some(t=>/^(ac3|eac3|ec-3|truehd|mlp|dts|dca|dts_hd|flac|alac|pcm_)/i.test(t.codec_name||''));
-   const containerNeedsConversion=/\\.(mkv|avi|ts|mpeg|mpg)(?:$|[?#])/i.test(remotePath);
+   const containerNeedsConversion=/\.(mkv|avi|ts|mpeg|mpg)(?:$|[?#])/i.test(remotePath);
    const shouldTranscodeAudio=audios.length>0&&(d.compatibility?.transcodeAudio||containerNeedsConversion||browserIncompatibleAudio);
    if(shouldTranscodeAudio){
     setMkvStatus('Converting remote audio to browser-compatible AAC…');
