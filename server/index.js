@@ -431,7 +431,7 @@ app.all('/api/proxy/:encoded',allowApi,async(req,res)=>{
   const r=await fetch(u,{method:req.method,redirect:'follow',headers,signal:controller.signal});const final=new URL(r.url);if(await blockedHost(final.hostname))return res.status(400).send('Redirect target not allowed');
   const type=r.headers.get('content-type')||'';
   if(req.method==='GET'&&(type.includes('mpegurl')||u.pathname.toLowerCase().endsWith('.m3u8'))){
-   const body=await r.text();const base=new URL(r.url);const rewritten=rewriteHlsPlaylist(body,base,url=>'/api/proxy?url='+encodeURIComponent(url));
+   const body=await r.text();const base=new URL(r.url);const rewritten=rewriteHlsPlaylist(body,base,url=>'/api/proxy/'+Buffer.from(url).toString('base64url'));
    res.status(r.status).setHeader('Content-Type','application/vnd.apple.mpegurl');res.setHeader('Access-Control-Allow-Origin','*');return res.send(rewritten);
   }
   res.status(r.status);for(const h of ['content-type','content-length','content-range','accept-ranges','last-modified','etag','cache-control']){const v=r.headers.get(h);if(v)res.setHeader(h,v)}
@@ -448,9 +448,9 @@ app.get('/api/proxy',allowApi,async(req,res)=>{
   const r=await fetch(u,{redirect:'follow',headers});const final=new URL(r.url);if(await blockedHost(final.hostname))return res.status(400).send('Redirect target not allowed');
   const type=r.headers.get('content-type')||'';
   if(type.includes('mpegurl')||u.pathname.toLowerCase().endsWith('.m3u8')){
-   let text=await r.text();const base=new URL('.',r.url);
-   text=text.split(/\r?\n/).map(line=>{if(!line||line.startsWith('#'))return line;try{return '/api/proxy?url='+encodeURIComponent(new URL(line,base).href)}catch{return line}}).join('\n');
-   res.setHeader('Content-Type','application/vnd.apple.mpegurl');res.setHeader('Access-Control-Allow-Origin','*');return res.send(text);
+   const body=await r.text();const base=new URL(r.url);
+   const rewritten=rewriteHlsPlaylist(body,base,url=>'/api/proxy/'+Buffer.from(url).toString('base64url'));
+   res.setHeader('Content-Type','application/vnd.apple.mpegurl');res.setHeader('Access-Control-Allow-Origin','*');return res.send(rewritten);
   }
   res.status(r.status);for(const h of ['content-type','content-length','content-range','accept-ranges']){const v=r.headers.get(h);if(v)res.setHeader(h,v)}
   res.setHeader('Access-Control-Allow-Origin','*');if(r.body){for await(const chunk of r.body)res.write(chunk)}res.end();
