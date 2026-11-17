@@ -276,7 +276,7 @@ app.post('/api/media-engine/:kind/:token/start',async(req,res)=>{
  const deadline=Date.now()+45000;
  let ready=false;
  while(Date.now()<deadline&&!ff.killed){
-  try{await access(path.join(dir,'index.m3u8'));const files=await readdir(dir);if(files.some(x=>/^segment-\\d+\\.ts$/.test(x))){ready=true;break}}catch{}
+  try{await access(path.join(dir,'index.m3u8'));const files=await readdir(dir);if(files.some(x=>x.startsWith('segment-')&&x.endsWith('.ts'))){ready=true;break}}catch{}
   if(ff.exitCode!==null)break;
   await new Promise(r=>setTimeout(r,200));
  }
@@ -289,7 +289,7 @@ app.get('/api/media-engine/:kind/:token/:file',async(req,res)=>{
  const {kind,token,file}=req.params;
  const item=kind==='local'?localMediaStore.get(token):kind==='remote'?remoteMediaGet(token):null;
  if(!item||!item.engineDir||item.expires<Date.now())return res.status(410).send('Media engine session expired.');
- if(!/^(index\\.m3u8|segment-\\d+\\.ts)$/.test(file))return res.status(400).send('Invalid media segment.');
+ if(file!=='index.m3u8'&&!(file.startsWith('segment-')&&file.endsWith('.ts')&&/^segment-[0-9]+[.]ts$/.test(file)))return res.status(400).send('Invalid media segment.');
  const full=path.join(item.engineDir,file);
  try{await access(full)}catch{return res.status(404).send('Media segment is not ready yet.')}
  res.setHeader('Cache-Control','no-store');
