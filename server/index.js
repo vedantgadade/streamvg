@@ -171,7 +171,7 @@ app.get('/api/transcode-audio',allowApi,async(req,res)=>{
   if(typeof raw!=='string'||!raw)return res.status(400).send('Missing media URL');
   const target=new URL(raw);
   if(!['http:','https:'].includes(target.protocol)||await blockedHost(target.hostname))return res.status(400).send('URL not allowed');
-  if(!/\\.mkv$/i.test(target.pathname))return res.status(415).send('Audio fallback is currently enabled for MKV files.');
+  if(!/\.mkv$/i.test(target.pathname))return res.status(415).send('Audio fallback is currently enabled for MKV files.');
   res.status(200);
   res.setHeader('Content-Type','video/mp4');
   res.setHeader('Access-Control-Allow-Origin','https://streamvg.pages.dev');
