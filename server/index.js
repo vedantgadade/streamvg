@@ -120,6 +120,7 @@ const localMediaCleanup=async token=>{
  localMediaStore.delete(token);
  try{await unlink(item.path)}catch{}
  if(item.transcodedPath)try{await unlink(item.transcodedPath)}catch{}
+  if(item.subtitlePaths)for(const file of Object.values(item.subtitlePaths))try{await unlink(file)}catch{}
 };
 
 app.post('/api/local-session',async(req,res)=>{
@@ -246,6 +247,7 @@ app.post('/api/media-engine/:kind/:token/start',async(req,res)=>{
  const {kind,token}=req.params;
  const item=kind==='local'?localMediaStore.get(token):kind==='remote'?remoteMediaGet(token):null;
  if(!item||item.expires<Date.now())return res.status(410).json({error:'Media session expired. Open the source again.'});
+ if(mediaEngineProcesses.size>=3)return res.status(429).json({error:'The media engine is busy. Stop another stream and try again.'});
  const streams=item.streams||[],videoStream=streams.find(x=>x.codec_type==='video');
  if(!videoStream)return res.status(415).json({error:'No video stream is available.'});
  const audioStreams=streams.filter(x=>x.codec_type==='audio');
