@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { lookup } from 'node:dns/promises';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
 
@@ -162,6 +162,29 @@ app.get('/api/stream/:token',allowApi,async(req,res)=>{
   }
   res.status(r.status);for(const h of ['content-type','content-length','content-range','accept-ranges','cache-control']){const v=r.headers.get(h);if(v)res.setHeader(h,v)}res.setHeader('Access-Control-Allow-Origin','*');if(r.body){for await(const chunk of r.body)res.write(chunk)}res.end();
  }catch(err){res.status(502).send('Relay error: '+(err?.message||'upstream failure'))}
+});
+
+app.get('/api/transcode-audio',allowApi,async(req,res)=>{
+ let child;
+ try{
+  const raw=req.query.url;
+  if(typeof raw!=='string'||!raw)return res.status(400).send('Missing media URL');
+  const target=new URL(raw);
+  if(!['http:','https:'].includes(target.protocol)||await blockedHost(target.hostname))return res.status(400).send('URL not allowed');
+  if(!/\\.mkv$/i.test(target.pathname))return res.status(415).send('Audio fallback is currently enabled for MKV files.');
+  res.status(200);
+  res.setHeader('Content-Type','video/mp4');
+  res.setHeader('Access-Control-Allow-Origin','https://streamvg.pages.dev');
+  res.setHeader('Cache-Control','no-store');
+  res.setHeader('X-StreamVG-Audio','AAC compatibility transcode');
+  child=spawn('ffmpeg',['-hide_banner','-loglevel','error','-nostdin','-i',target.href,'-map','0:v:0','-map','0:a?','-c:v','copy','-tag:v','hvc1','-c:a','aac','-b:a','256k','-ac','2','-map_metadata','0','-movflags','frag_keyframe+empty_moov+default_base_moof','-f','mp4','pipe:1'],{stdio:['ignore','pipe','pipe']});
+  let stderr='';
+  child.stderr.on('data',chunk=>{if(stderr.length<8000)stderr+=chunk.toString()});
+  child.stdout.pipe(res);
+  child.on('error',err=>{console.error('MKV audio fallback spawn error:',err.message);if(!res.headersSent)res.status(500).end('Audio conversion is unavailable on the server.');else res.destroy(err)});
+  child.on('close',code=>{if(code!==0)console.error('MKV audio fallback exited:',code,stderr.slice(-2000));if(!res.destroyed&&!res.writableEnded)res.end()});
+  res.on('close',()=>{if(!res.writableEnded&&child&&!child.killed)child.kill('SIGKILL')});
+ }catch(err){if(child&&!child.killed)child.kill('SIGKILL');if(!res.headersSent)res.status(400).send('Could not start audio compatibility conversion.');else res.destroy(err)}
 });
 
 app.get('/api/proxy',allowApi,async(req,res)=>{
