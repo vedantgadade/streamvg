@@ -2,7 +2,7 @@
 
 Free web video player and streaming diagnostics tool.
 
-Features: direct MP4/WebM, HLS, DASH, local playback, quality selection, diagnostics, subtitles, A-B loop, sleep timer, resume, history, sharing and optional public-stream proxy.
+Features: direct MP4/WebM, HLS, DASH, local playback, quality selection, diagnostics, subtitles, A-B loop, sleep timer, resume, history, sharing and optional public-stream proxy. Unsupported local-file codecs can be transcoded in the browser to H.264/AAC MP4 with FFmpeg WebAssembly; the selected file stays on the device.
 
 Run:
 npm install
