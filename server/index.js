@@ -22,6 +22,7 @@ const relay=(url,headers={})=>{const token=randomUUID();relayStore.set(token,{ur
 const relayGet=token=>{const x=relayStore.get(token);if(!x||x.expires<Date.now()){relayStore.delete(token);return null}return x};
 const RATE_WINDOW=60000;
 const RATE_LIMIT=300;
+const setStreamVGCors=(req,res)=>{const origin=String(req.headers.origin||'');if(origin==='https://streamvg.pages.dev'||/^https:\/\/[a-z0-9-]+\.streamvg\.pages\.dev$/.test(origin))res.setHeader('Access-Control-Allow-Origin',origin);res.setHeader('Vary','Origin');};
 const clientIp=req=>(req.headers['x-forwarded-for']||req.socket.remoteAddress||'unknown').toString().split(',')[0].trim();
 
 const allowApi=(req,res,next)=>{
