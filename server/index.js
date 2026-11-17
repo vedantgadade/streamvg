@@ -6,7 +6,7 @@ import { lookup } from 'node:dns/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
-import { mkdir, unlink, rm, stat } from 'node:fs/promises';
+import { mkdir, unlink, rm, stat, writeFile } from 'node:fs/promises';
 import { createWriteStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { spawn } from 'node:child_process';
@@ -160,6 +160,52 @@ const localMediaStore=new Map();
 const LOCAL_MEDIA_TTL=8*60*60*1000;
 const LOCAL_MEDIA_DIR='/tmp/streamvg-local';
 const LOCAL_MEDIA_MAX=8*1024*1024*1024;
+
+const localUploadStore=new Map();
+const LOCAL_UPLOAD_TTL=60*60*1000;
+const LOCAL_UPLOAD_CHUNK_MAX=16*1024*1024;
+app.post('/api/local-session/start',async(req,res)=>{
+ setStreamVGCors(req,res);res.setHeader('Access-Control-Allow-Methods','POST,OPTIONS');res.setHeader('Access-Control-Allow-Headers','Content-Type');
+ const size=Number(req.body?.size);
+ if(!Number.isSafeInteger(size)||size<=0||size>LOCAL_MEDIA_MAX)return res.status(413).json({error:'Local file size is invalid or exceeds the 8 GB limit.'});
+ const token=randomUUID(),filePath=path.join(LOCAL_MEDIA_DIR,token+'.upload');
+ try{await mkdir(LOCAL_MEDIA_DIR,{recursive:true});await writeFile(filePath,Buffer.alloc(0));localUploadStore.set(token,{path:filePath,size,received:0,expires:Date.now()+LOCAL_UPLOAD_TTL});res.json({token,chunkSize:LOCAL_UPLOAD_CHUNK_MAX})}
+ catch(err){await unlink(filePath).catch(()=>{});res.status(500).json({error:'Could not start local upload.'})}
+});
+app.post('/api/local-session/:token/chunk',async(req,res)=>{
+ setStreamVGCors(req,res);res.setHeader('Access-Control-Allow-Methods','POST,OPTIONS');res.setHeader('Access-Control-Allow-Headers','Content-Type');
+ const item=localUploadStore.get(req.params.token);
+ if(!item||item.expires<Date.now()){if(item){localUploadStore.delete(req.params.token);await unlink(item.path).catch(()=>{})}return res.status(410).json({error:'Local upload session expired.'})}
+ const offset=Number(req.query.offset),declared=Number(req.headers['content-length']||0);
+ if(!Number.isSafeInteger(offset)||offset!==item.received)return res.status(409).json({error:'Upload chunk is out of order.',expectedOffset:item.received});
+ if(!Number.isSafeInteger(declared)||declared<=0||declared>LOCAL_UPLOAD_CHUNK_MAX||item.received+declared>item.size)return res.status(413).json({error:'Upload chunk size is invalid.'});
+ let bytes=0;
+ try{
+  const out=createWriteStream(item.path,{flags:'a'});
+  req.on('data',chunk=>{bytes+=chunk.length});
+  await pipeline(req,out);
+  if(bytes!==declared)throw new Error('Upload chunk size did not match its content length.');
+  item.received+=bytes;item.expires=Date.now()+LOCAL_UPLOAD_TTL;
+  res.json({received:item.received,total:item.size});
+ }catch(err){console.error(JSON.stringify({event:'local-upload-chunk-error',token:req.params.token,error:String(err?.message||err)}));if(!res.headersSent)res.status(400).json({error:'Upload chunk failed. Please retry the file upload.'})}
+});
+app.post('/api/local-session/:token/finish',async(req,res)=>{
+ setStreamVGCors(req,res);res.setHeader('Access-Control-Allow-Methods','POST,OPTIONS');res.setHeader('Access-Control-Allow-Headers','Content-Type');
+ const item=localUploadStore.get(req.params.token);
+ if(!item||item.expires<Date.now())return res.status(410).json({error:'Local upload session expired.'});
+ if(item.received!==item.size)return res.status(409).json({error:'The complete movie has not been uploaded.',received:item.received,total:item.size});
+ try{
+  const{stdout,stderr}=await execFileAsync('ffprobe',['-v','error','-show_streams','-show_format','-of','json',item.path],{timeout:120000,maxBuffer:20*1024*1024});
+  if(stderr)console.log(JSON.stringify({event:'local-media-probe-stderr',token:req.params.token,stderr:String(stderr).slice(-3000)}));
+  const probe=JSON.parse(stdout||'{}'),streams=Array.isArray(probe.streams)?probe.streams:[];
+  const audio=streams.filter(x=>x.codec_type==='audio').map((x,i)=>({i,index:x.index,codec:x.codec_name||'',language:x.tags?.language||x.tags?.language_ietf||'',title:x.tags?.title||x.tags?.handler_name||('Audio '+(i+1)),channels:x.channels||0,sampleRate:x.sample_rate||'',bitrate:x.bit_rate||''}));
+  console.log(JSON.stringify({event:'local-media-upload-complete',token:req.params.token,size:item.received,audio}));
+  if(!audio.length){localUploadStore.delete(req.params.token);await unlink(item.path).catch(()=>{});return res.status(422).json({error:'No audio stream found in local media.',streams})}
+  localUploadStore.delete(req.params.token);localMediaStore.set(req.params.token,{path:item.path,streams,expires:Date.now()+LOCAL_MEDIA_TTL});
+  res.json({token:req.params.token,size:item.received,streams});
+ }catch(err){localUploadStore.delete(req.params.token);await unlink(item.path).catch(()=>{});console.error(JSON.stringify({event:'local-media-session-error',token:req.params.token,error:String(err?.stack||err)}));res.status(422).json({error:'FFprobe could not read the uploaded movie: '+String(err?.message||err).slice(0,240)})}
+});
+
 
 const localMediaCleanup=async token=>{
  const item=localMediaStore.get(token);
