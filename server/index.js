@@ -409,6 +409,21 @@ app.get('/api/stream/:token',allowApi,async(req,res)=>{
  }catch(err){res.status(502).send('Relay error: '+(err?.message||'upstream failure'))}
 });
 
+app.all('/api/proxy/:encoded',allowApi,async(req,res)=>{
+ try{
+  if(req.method!=='GET'&&req.method!=='HEAD')return res.sendStatus(405);
+  const encoded=String(req.params.encoded||'').replace(/-/g,'+').replace(/_/g,'/');
+  const target=Buffer.from(encoded,'base64').toString('utf8');
+  if(!target)return res.status(400).send('Missing encoded url');
+  const u=new URL(target);if(!['http:','https:'].includes(u.protocol)||await blockedHost(u.hostname))return res.status(400).send('URL not allowed');
+  const headers={};for(const h of ['range','accept','accept-language','user-agent']){const v=req.headers[h];if(v)headers[h]=v}
+  const r=await fetch(u,{method:req.method,redirect:'follow',headers});const final=new URL(r.url);if(await blockedHost(final.hostname))return res.status(400).send('Redirect target not allowed');
+  res.status(r.status);for(const h of ['content-type','content-length','content-range','accept-ranges','last-modified','etag','cache-control']){const v=r.headers.get(h);if(v)res.setHeader(h,v)}
+  res.setHeader('Access-Control-Allow-Origin','*');res.setHeader('Access-Control-Expose-Headers','Content-Length,Content-Range,Accept-Ranges,Content-Type');
+  if(req.method==='HEAD'||!r.body)return res.end();
+  for await(const chunk of r.body)res.write(chunk);res.end();
+ }catch(err){res.status(502).send('Proxy error: '+(err?.message||'upstream failure'))}
+});
 app.get('/api/proxy',allowApi,async(req,res)=>{
  try{
   const target=req.query.url;if(!target)return res.status(400).send('Missing url');
