@@ -4,7 +4,7 @@ import { ArrowLeft, Play, Pause, Volume2, Maximize, Subtitles, Upload, Settings 
 export default function VlcPlayer({apiBase,initialUrl=''}) {
  const video=useRef(null),audio=useRef(null),file=useRef(null);
  const [url,setUrl]=useState(initialUrl),[active,setActive]=useState(''),[busy,setBusy]=useState(false),[status,setStatus]=useState('Ready'),[volume,setVolume]=useState(1),[muted,setMuted]=useState(false),[speed,setSpeed]=useState(1),[tracks,setTracks]=useState([]),[track,setTrack]=useState(-1),[token,setToken]=useState(''),[duration,setDuration]=useState(0),[time,setTime]=useState(0),[error,setError]=useState('');
- const cleanup=()=>{if(audio.current){audio.current.pause();audio.current.removeAttribute('src');audio.current.load()}if(video.current){video.current.pause();video.current.removeAttribute('src');video.current.load()}setActive('');setToken('');setTracks([]);setTrack(-1)};
+ const cleanup=()=>{if(audio.current){audio.current.pause();audio.current.removeAttribute('src');audio.current.load()}if(video.current){video.current.pause();video.current.removeAttribute('src');video.current.load()}setActive('');setToken('');setIsRemote(false);setTracks([]);setTrack(-1)};
  useEffect(()=>()=>cleanup(),[]);
  const playUrl=async(value)=>{
   if(!value)return;cleanup();setBusy(true);setError('');setStatus('Opening media…');
@@ -13,7 +13,7 @@ export default function VlcPlayer({apiBase,initialUrl=''}) {
    setActive(value);setStatus('Direct playback');
    try{
     const r=await fetch(apiBase+'/api/remote-media-session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:value})});
-    const d=await r.json();if(r.ok&&d.token){setToken(d.token);const a=(d.streams||[]).filter(x=>x.codec_type==='audio');setTracks(a.map((x,i)=>({i,label:x.title||x.language||('Audio '+(i+1)),codec:x.codec_name||'',lang:x.language||''})));setStatus(a.length+' audio track(s) detected')}
+    const d=await r.json();if(r.ok&&d.token){setToken(d.token);setIsRemote(true);const a=(d.streams||[]).filter(x=>x.codec_type==='audio');setTracks(a.map((x,i)=>({i,label:x.title||x.language||('Audio '+(i+1)),codec:x.codec_name||'',lang:x.language||''})));setStatus(a.length+' audio track(s) detected')}
    }catch(e){console.warn('Track scan unavailable',e)}
   }catch(e){setError(e.message||'Could not open this media');setStatus('Playback failed')}finally{setBusy(false)}
  };
@@ -33,7 +33,7 @@ export default function VlcPlayer({apiBase,initialUrl=''}) {
  };
  const selectTrack=async i=>{
   if(i<0||!token)return;const el=audio.current,v=video.current;if(!el||!v)return;setBusy(true);setStatus('Preparing audio track…');
-  try{el.src=apiBase+'/api/local-audio/'+token+'?track='+i;el.load();await new Promise((ok,no)=>{el.oncanplay=ok;el.onerror=()=>no(new Error('Audio extraction failed'))});el.currentTime=v.currentTime;el.volume=muted?0:volume;el.playbackRate=speed;v.muted=true;if(!v.paused)await el.play();setTrack(i);setStatus('Audio track '+(i+1)+' active')}
+  try{el.src=apiBase+(isRemote?'/api/remote-audio/':'/api/local-audio/')+token+'?track='+i;el.load();await new Promise((ok,no)=>{el.oncanplay=ok;el.onerror=()=>no(new Error('Audio extraction failed'))});el.currentTime=v.currentTime;el.volume=muted?0:volume;el.playbackRate=speed;v.muted=true;if(!v.paused)await el.play();setTrack(i);setStatus('Audio track '+(i+1)+' active')}
   catch(e){v.muted=false;setError(e.message);setStatus('Audio track failed')}finally{setBusy(false)}
  };
  const setVol=x=>{const n=Number(x);setVolume(n);setMuted(n===0);if(audio.current&&track>=0){audio.current.volume=n;audio.current.muted=n===0}else if(video.current){video.current.volume=n;video.current.muted=n===0}};
