@@ -18,7 +18,8 @@
     "react": "latest",
     "react-dom": "latest",
     "@ffmpeg/ffmpeg": "0.12.15",
-    "@ffmpeg/util": "0.12.2"
+    "@ffmpeg/util": "0.12.2",
+    "@ffmpeg/core": "0.12.10"
   },
   "devDependencies": {
     "vite": "latest"
