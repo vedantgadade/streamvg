@@ -54,7 +54,11 @@ export default function App(){
     x.on(Hls.Events.LEVEL_SWITCHED,(_,d)=>{const l=x.levels[d.level];setLevel(d.level);setStats(s=>({...s,resolution:l?.width?(l.width+'×'+l.height):s.resolution,bitrate:l?.bitrate?((l.bitrate/1000000).toFixed(2)+' Mbps'):s.bitrate,bandwidth:x.bandwidthEstimate?((x.bandwidthEstimate/1000000).toFixed(2)+' Mbps'):s.bandwidth,codec:l?.videoCodec||l?.codecs||s.codec}))});
     x.loadSource(actual);x.attachMedia(v);
    }else if(v.canPlayType('application/vnd.apple.mpegurl'))v.src=actual;else{alert('HLS is not supported by this browser.');return}
-  }else if(/\\.mkv(?:[?#]|$)/i.test(playable)){\n   setEngine('FFmpeg • AAC audio compatibility');\n   v.src=API_BASE+'/api/transcode-audio?url='+encodeURIComponent(playable);\n   v.play().catch(err=>{console.warn('MKV audio compatibility playback failed',err);setEngine('FFmpeg • Conversion failed')});\n  }else if(low.includes('.mpd')){
+  }else if(/\.mkv(?:[?#]|$)/i.test(playable)){
+   setEngine('FFmpeg • AAC audio compatibility');
+   v.src=API_BASE+'/api/transcode-audio?url='+encodeURIComponent(playable);
+   v.play().catch(err=>{console.warn('MKV audio compatibility playback failed',err);setEngine('FFmpeg • Conversion failed')});
+  }else if(low.includes('.mpd')){
    setEngine('DASH.js');
    const d=dashjs.MediaPlayer().create();dash.current=d;
    const readDash=()=>{try{
