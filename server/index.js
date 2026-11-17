@@ -297,6 +297,15 @@ app.get('/api/media-engine/:kind/:token/:file',async(req,res)=>{
  res.sendFile(full,err=>{if(err&&!res.headersSent)res.status(500).end('Could not serve media segment')});
 });
 
+app.post('/api/media-engine/:kind/:token/stop',async(req,res)=>{
+ mediaEngineCors(req,res);
+ const {kind,token}=req.params;
+ const item=kind==='local'?localMediaStore.get(token):kind==='remote'?remoteMediaStore.get(token):null;
+ if(item)item.engineDir=null;
+ await stopMediaEngine(token);
+ res.json({ok:true});
+});
+
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..','dist');
 
 const teraHosts=['terabox.com','terabox.app','teraboxshare.com','teraboxlink.com','teraboxurl.com','teraboxapp.com','terabox.club','terabox.link','teraboxfree.com','terafileshare.com','terasharefile.com','terasharelink.com','terashareus.com','1024terabox.com','1024tera.com','1024-terabox.com','tera1024box.com','momerybox.com','bestclouddrive.com','4funbox.in','4funbox.com','mirrobox.com','nephobox.com','pebibox.com','fancybox.in','gibibox.com','tibibox.com'];
