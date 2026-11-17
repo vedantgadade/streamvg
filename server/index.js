@@ -140,7 +140,6 @@ app.post('/api/local-session',async(req,res)=>{
   const streams=Array.isArray(probe.streams)?probe.streams:[];
   const audio=streams.filter(x=>x.codec_type==='audio').map((x,i)=>({i,index:x.index,codec:x.codec_name||'',codecLong:x.codec_long_name||'',language:x.tags?.language||x.tags?.language_ietf||'',title:x.tags?.title||x.tags?.handler_name||('Audio '+(i+1)),channels:x.channels||0,sampleRate:x.sample_rate||'',bitrate:x.bit_rate||''}));
   console.log(JSON.stringify({event:'local-media-audio-codecs',token,size:bytes,audio}));
-  if(!audio.length){await unlink(filePath).catch(()=>{});return res.status(422).json({error:'No audio stream found in local media.',streams})}
   localMediaStore.set(token,{path:filePath,streams,expires:Date.now()+LOCAL_MEDIA_TTL});
   res.json({token,size:bytes,streams});
  }catch(err){
@@ -183,6 +182,33 @@ app.get('/api/local-transcode/:token/file',async(req,res)=>{
  res.setHeader('Cache-Control','no-store');
  res.type('mp4');
  res.sendFile(item.transcodedPath,err=>{if(err&&!res.headersSent)res.status(500).end('Could not serve converted video')});
+});
+app.get('/api/local-subtitle/:token/:track',async(req,res)=>{
+ res.setHeader('Access-Control-Allow-Origin','https://streamvg.pages.dev');
+ res.setHeader('Access-Control-Allow-Methods','GET,OPTIONS');
+ const item=localMediaStore.get(req.params.token);
+ if(!item||item.expires<Date.now())return res.status(410).send('Local media session expired.');
+ item.expires=Date.now()+LOCAL_MEDIA_TTL;
+ const track=Number(req.params.track),subs=item.streams.filter(x=>x.codec_type==='subtitle');
+ if(!Number.isInteger(track)||track<0||track>=subs.length)return res.status(400).send('Invalid subtitle track.');
+ const codec=String(subs[track].codec_name||'').toLowerCase();
+ const textCodecs=new Set(['subrip','ass','ssa','mov_text','webvtt','text','ttml','srt']);
+ if(!textCodecs.has(codec))return res.status(415).send('This subtitle is image-based and cannot be converted to text.');
+ try{
+  item.subtitlePaths=item.subtitlePaths||{};
+  let output=item.subtitlePaths[track];
+  if(!output){
+   output=path.join(LOCAL_MEDIA_DIR,req.params.token+'-subtitle-'+track+'.vtt');
+   await execFileAsync('ffmpeg',['-hide_banner','-loglevel','error','-y','-i',item.path,'-map','0:s:'+track,'-c:s','webvtt','-f','webvtt',output],{timeout:120000,maxBuffer:4*1024*1024});
+   item.subtitlePaths[track]=output;
+  }
+  res.setHeader('Cache-Control','no-store');
+  res.type('text/vtt');
+  res.sendFile(output,err=>{if(err&&!res.headersSent)res.status(500).end('Could not serve converted subtitles')});
+ }catch(err){
+  console.error(JSON.stringify({event:'local-subtitle-error',token:req.params.token,track,codec,error:String(err?.message||err).slice(0,1000)}));
+  res.status(422).send('Could not convert this subtitle track.');
+ }
 });
 app.get('/api/local-audio/:token',async(req,res)=>{
  res.setHeader('Access-Control-Allow-Origin','https://streamvg.pages.dev');
@@ -384,6 +410,6 @@ const extractMedia=(html,base)=>{
 setInterval(()=>{const now=Date.now();for(const[token,item]of localMediaStore)if(item.expires<now)localMediaCleanup(token)},60000).unref();
 setInterval(()=>{const now=Date.now();for(const[token,item]of remoteMediaStore)if(item.expires<now)remoteMediaStore.delete(token)},60000).unref();
 setInterval(()=>{const now=Date.now();for(const[k,v]of rate)if(now-v.at>RATE_WINDOW*2)rate.delete(k)},RATE_WINDOW*2).unref();
-const API_PUBLIC=(process.env.PUBLIC_API_URL||'https://streamvg-web-production-22879f12.up.railway.app').replace(/\/$/,'');
+const API_PUBLIC=(process.env.PUBLIC_API_URL||'https://streamvg-web-production.up.railway.app').replace(/\/$/,'');
 setInterval(()=>{const now=Date.now();for(const[k,v]of relayStore)if(v.expires<now)relayStore.delete(k)},60000).unref();
 const port=process.env.PORT||3000;createServer(app).listen(port,()=>console.log('StreamVG listening on '+port));
