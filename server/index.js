@@ -115,6 +115,7 @@ const localMediaCleanup=async token=>{
  if(!item)return;
  localMediaStore.delete(token);
  try{await unlink(item.path)}catch{}
+ if(item.transcodedPath)try{await unlink(item.transcodedPath)}catch{}
 };
 
 app.post('/api/local-session',async(req,res)=>{
@@ -150,6 +151,39 @@ app.post('/api/local-session',async(req,res)=>{
  }
 });
 
+app.post('/api/local-transcode/:token',async(req,res)=>{
+ res.setHeader('Access-Control-Allow-Origin','https://streamvg.pages.dev');
+ res.setHeader('Access-Control-Allow-Methods','POST,OPTIONS');
+ res.setHeader('Access-Control-Allow-Headers','Content-Type');
+ const item=localMediaStore.get(req.params.token);
+ if(!item||item.expires<Date.now())return res.status(410).json({error:'Local media session expired. Select the file again.'});
+ try{
+  if(!item.transcodedPath){
+   if(!item.transcodePromise){
+    item.transcodePromise=(async()=>{
+     const output=path.join(LOCAL_MEDIA_DIR,req.params.token+'.mp4');
+     console.log(JSON.stringify({event:'local-video-transcode-start',token:req.params.token}));
+     await execFileAsync('ffmpeg',['-hide_banner','-loglevel','error','-y','-i',item.path,'-map','0:v:0','-map','0:a:0?','-sn','-dn','-c:v','libx264','-preset','veryfast','-crf','23','-pix_fmt','yuv420p','-c:a','aac','-b:a','192k','-ac','2','-movflags','+faststart',output],{timeout:1800000,maxBuffer:4*1024*1024});
+     item.transcodedPath=output;
+     console.log(JSON.stringify({event:'local-video-transcode-ready',token:req.params.token}));
+    })().catch(err=>{item.transcodePromise=null;throw err});
+   }
+   await item.transcodePromise;
+  }
+  res.json({url:'/api/local-transcode/'+req.params.token+'/file',format:'mp4',videoCodec:'h264',audioCodec:'aac'});
+ }catch(err){
+  console.error(JSON.stringify({event:'local-video-transcode-error',token:req.params.token,error:String(err?.message||err).slice(0,1200)}));
+  res.status(422).json({error:'FFmpeg could not convert this file: '+String(err?.message||'unknown error').slice(0,300)});
+ }
+});
+app.get('/api/local-transcode/:token/file',async(req,res)=>{
+ const item=localMediaStore.get(req.params.token);
+ if(!item||!item.transcodedPath||item.expires<Date.now())return res.status(404).send('Converted video is not ready.');
+ res.setHeader('Access-Control-Allow-Origin','https://streamvg.pages.dev');
+ res.setHeader('Cache-Control','no-store');
+ res.type('mp4');
+ res.sendFile(item.transcodedPath,err=>{if(err&&!res.headersSent)res.status(500).end('Could not serve converted video')});
+});
 app.get('/api/local-audio/:token',async(req,res)=>{
  res.setHeader('Access-Control-Allow-Origin','https://streamvg.pages.dev');
  res.setHeader('Access-Control-Allow-Methods','GET,OPTIONS');
