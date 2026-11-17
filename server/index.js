@@ -448,6 +448,7 @@ const extractMedia=(html,base)=>{
 };
 
 setInterval(()=>{const now=Date.now();for(const[token,item]of localMediaStore)if(item.expires<now)localMediaCleanup(token)},60000).unref();
+setInterval(()=>{const now=Date.now();for(const[token,item]of localUploadStore)if(item.expires<now){localUploadStore.delete(token);unlink(item.path).catch(()=>{})}},60000).unref();
 setInterval(()=>{const now=Date.now();for(const[token,item]of remoteMediaStore)if(item.expires<now)remoteMediaStore.delete(token)},60000).unref();
 setInterval(()=>{const now=Date.now();for(const[k,v]of rate)if(now-v.at>RATE_WINDOW*2)rate.delete(k)},RATE_WINDOW*2).unref();
 const API_PUBLIC=(process.env.PUBLIC_API_URL||'https://streamvg-web-production-22879f12.up.railway.app').replace(/\/$/,'');
