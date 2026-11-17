@@ -77,12 +77,36 @@ export default function App(){
  const resolveUrl=async input=>{const direct=/\.(m3u8|mpd|mp4|webm|m4v|mov|ogv|ogg|mkv|ts)(?:[?#]|$)/i.test(input);if(direct)return input;setResolving(true);try{let current=input;const seen=new Set();for(let depth=0;depth<6;depth++){if(seen.has(current))break;seen.add(current);const r=await fetch(API_BASE+'/api/resolve?url='+encodeURIComponent(current));const d=await r.json();if(d.kind==='media'&&d.url)return d.url;const next=[...(d.links||[]),...(d.iframes||[])].find(x=>x&&!seen.has(x));if(!next)break;current=next}throw new Error('No playable media found')}finally{setResolving(false)}};
  const load=async(input=url,fromHistory=false)=>{
   if(!input)return;try{new URL(input)}catch{alert('Please enter a valid video URL.');return}
-  const original=input;let playable=input;setEmbedSrc('');sourceRef.current=original;
-  if(isYouTube(input)){const e=youtubeEmbed(input);if(e){destroy();setRemoteSession('');setSource(original);setLevels([]);setLevel(-1);setResume(null);setEmbedSrc(e);setEngine('YouTube Player');if(!fromHistory)addHistory(original);window.history.pushState({},'', '?url='+encodeURIComponent(original));return}}
+  const original=input;let playable=input;setEmbedSrc('');
+  if(isYouTube(input)){const e=youtubeEmbed(input);if(e){destroy();setSource(original);setLevels([]);setLevel(-1);setResume(null);setEmbedSrc(e);setEngine('YouTube Player');if(!fromHistory)addHistory(original);window.history.pushState({},'', '?url='+encodeURIComponent(original));return}}
   if(isTeraBox(input)){try{playable=await resolveUrl(input)}catch{setEngine('TeraBox • No playable media found');alert('StreamVG could not resolve this TeraBox video.');return}}else{try{playable=await resolveUrl(input)}catch{setEngine('Resolver • No playable media found');alert('StreamVG could not find a playable video from this URL.');return}}
   destroy();localFileRef.current=null;localStreamsRef.current=[];localAudioCache.current.clear();localSubtitleCache.current.clear();setMkvStatus('');setSource(original);setLevels([]);setLevel(-1);setResume(null);
   const v=video.current;const actual=proxy?escUrl(playable):playable;const low=playable.toLowerCase();
-  setEngine('MoviPlayer • FFmpeg WASM + WebCodecs');setMoviMode(true);setMoviSrc(actual);
+  if(low.includes('.m3u8')){
+   setEngine('HLS.js');
+   if(Hls.isSupported()){const x=new Hls({enableWorker:true});hls.current=x;
+    const syncHlsTracks=()=>{const ats=x.audioTracks||[];setAudioTracks(ats.map((t,i)=>({i,label:t.name||t.lang||t.language||t.groupId||('Audio '+(i+1)),lang:t.lang||t.language||'',codec:t.audioCodec||t.codecSet||''})));const sts=x.subtitleTracks||[];setCaptionTracks(sts.map((t,i)=>({i,label:t.name||t.lang||('Subtitle '+(i+1)),lang:t.lang||''})))};
+    x.on(Hls.Events.MANIFEST_PARSED,(_,d)=>{setLevels(d.levels.map((l,i)=>({i,height:l.height,width:l.width,bitrate:l.bitrate,codec:l.videoCodec||l.codecs||'—'})));syncHlsTracks()});
+    x.on(Hls.Events.AUDIO_TRACKS_UPDATED,syncHlsTracks);x.on(Hls.Events.AUDIO_TRACK_SWITCHED,(_,d)=>setAudioTrack(d.id));x.on(Hls.Events.SUBTITLE_TRACKS_UPDATED,syncHlsTracks);
+    x.on(Hls.Events.LEVEL_SWITCHED,(_,d)=>{const l=x.levels[d.level];setLevel(d.level);setStats(s=>({...s,resolution:l?.width?(l.width+'×'+l.height):s.resolution,bitrate:l?.bitrate?((l.bitrate/1000000).toFixed(2)+' Mbps'):s.bitrate,bandwidth:x.bandwidthEstimate?((x.bandwidthEstimate/1000000).toFixed(2)+' Mbps'):s.bandwidth,codec:l?.videoCodec||l?.codecs||s.codec}))});
+    x.loadSource(actual);x.attachMedia(v);
+   }else if(v.canPlayType('application/vnd.apple.mpegurl'))v.src=actual;else{alert('HLS is not supported by this browser.');return}
+  }else if(low.includes('.mpd')){
+   setEngine('DASH.js');
+   const d=dashjs.MediaPlayer().create();dash.current=d;
+   const readDash=()=>{try{
+    const reps=d.getRepresentationsByTypeUnfiltered?.('video')||d.getRepresentationsByType('video')||[];
+    setLevels(reps.map((r,i)=>({i,height:r.height,width:r.width,bitrate:r.bitrateInKbit?Math.round(r.bitrateInKbit*1000):(r.bandwidth||0),codec:r.codecs||r.codec||'—'})));
+    const cur=d.getCurrentRepresentationForType('video');
+    if(cur){const i=reps.findIndex(r=>r.id===cur.id);setLevel(i>=0?i:-1);setStats(s=>({...s,resolution:cur.width&&cur.height?(cur.width+'×'+cur.height):s.resolution,bitrate:cur.bitrateInKbit?((cur.bitrateInKbit/1000).toFixed(2)+' Mbps'):cur.bandwidth?((cur.bandwidth/1000000).toFixed(2)+' Mbps'):s.bitrate,codec:cur.codecs||cur.codec||s.codec}))}
+   }catch(err){console.error('DASH representation read error',err)}};
+   const syncDashTracks=()=>{try{const ats=d.getTracksFor?.('audio')||[];const cur=d.getCurrentTrackFor?.('audio');setAudioTracks(ats.map((t,i)=>({i,label:t.lang||t.labels?.[0]?.text||t.id||('Audio '+(i+1)),lang:t.lang||'',codec:t.codec||''})));const active=ats.findIndex(t=>t.id===cur?.id);if(active>=0)setAudioTrack(active)}catch(err){console.warn('DASH audio track list update failed',err)}try{const sts=d.getTracksFor?.('text')||[];setCaptionTracks(sts.map((t,i)=>({i,label:t.lang||t.id||('Subtitle '+(i+1)),lang:t.lang||''})))}catch{}};
+   const onDashReady=()=>{readDash();syncDashTracks();setTimeout(()=>{readDash();syncDashTracks()},500);setTimeout(()=>v.play().catch(()=>{}),0)};
+   d.on(dashjs.MediaPlayer.events.STREAM_INITIALIZED,onDashReady);d.on(dashjs.MediaPlayer.events.TRACKS_ADDED,syncDashTracks);d.on(dashjs.MediaPlayer.events.CURRENT_TRACK_CHANGED,syncDashTracks);
+   d.on(dashjs.MediaPlayer.events.QUALITY_CHANGE_RENDERED,()=>{readDash()});
+   d.on(dashjs.MediaPlayer.events.ERROR,e=>{console.error('DASH error',e);setEngine('DASH.js • Error')});
+   try{d.initialize(v,actual,false)}catch(err){console.error(err);setEngine('DASH.js • Error');alert('DASH could not be loaded. The stream may be unsupported or unavailable.')}
+  }else{setEngine(input.startsWith('blob:')?'HTML5 Local':'HTML5 Native');v.src=actual;v.play().catch(()=>{});if(/\.mkv(?:[?#]|$)/i.test(playable))prepareRemoteMedia(playable)}
   if(!original.startsWith('blob:'))addHistory(original);
   if(!fromHistory){const p=Number(localStorage.getItem('streamvg-pos-'+input)||0);if(p>5)setResume(p)}
   window.history.pushState({},'',original.startsWith('blob:')?location.pathname:'?url='+encodeURIComponent(original));
