@@ -7,7 +7,7 @@ export default function VlcPlayer({apiBase,initialUrl=''}) {
  const [url,setUrl]=useState(initialUrl),[busy,setBusy]=useState(false),[status,setStatus]=useState('Ready'),[volume,setVolume]=useState(1),[muted,setMuted]=useState(false),[speed,setSpeed]=useState(1),[tracks,setTracks]=useState([]),[track,setTrack]=useState(0),[duration,setDuration]=useState(0),[time,setTime]=useState(0),[error,setError]=useState(''),[playing,setPlaying]=useState(false);
  const stopSession=()=>{const old=session.current;session.current=null;if(old)fetch(apiBase+'/api/media-engine/'+old.kind+'/'+old.token+'/stop',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).catch(()=>{})};
  const stop=()=>{request.current++;stopSession();if(hls.current){hls.current.destroy();hls.current=null}if(video.current){video.current.pause();video.current.removeAttribute('src');video.current.load()}session.current=null;setPlaying(false);setTime(0);setDuration(0)};
- useEffect(()=>{if(initialUrl)openNetwork(initialUrl);return()=>{if(hls.current)hls.current.destroy();if(video.current){video.current.pause();video.current.removeAttribute('src')}}},[]);
+ useEffect(()=>{if(initialUrl)openNetwork(initialUrl);return()=>{stopSession();if(hls.current)hls.current.destroy();if(video.current){video.current.pause();video.current.removeAttribute('src')}}},[]);
  const startEngine=async(kind,token,audioTrack,streams,seq)=>{
   setStatus('FFmpeg is preparing a browser-compatible H.264/AAC stream…');
   const r=await fetch(apiBase+'/api/media-engine/'+kind+'/'+token+'/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({audioTrack})});
