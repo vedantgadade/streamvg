@@ -6,7 +6,7 @@ import { lookup } from 'node:dns/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
-import { mkdir, unlink } from 'node:fs/promises';
+import { mkdir, unlink, rm, access, readdir } from 'node:fs/promises';
 import { createWriteStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { spawn } from 'node:child_process';
@@ -44,6 +44,9 @@ app.post('/api/remote/:code/play',(req,res)=>{remoteCors(req,res);const item=rem
 
 
 const remoteMediaStore=new Map();
+const mediaEngineProcesses=new Map();
+const MEDIA_ENGINE_DIR='/tmp/streamvg-engine';
+const stopMediaEngine=async token=>{const p=mediaEngineProcesses.get(token);if(p&&!p.killed)p.kill('SIGTERM');mediaEngineProcesses.delete(token);await rm(path.join(MEDIA_ENGINE_DIR,token),{recursive:true,force:true}).catch(()=>{})};
 const REMOTE_MEDIA_TTL=30*60*1000;
 const remoteMediaGet=token=>{const item=remoteMediaStore.get(token);if(!item||item.expires<Date.now()){remoteMediaStore.delete(token);return null}item.expires=Date.now()+REMOTE_MEDIA_TTL;return item};
 const inspectRemoteMedia=async target=>{
@@ -59,9 +62,9 @@ app.post('/api/remote-media-session',async(req,res)=>{
   const target=String(req.body?.url||'').trim();
   if(!target||target.length>8192)return res.status(400).json({error:'A valid media URL is required.'});
   const streams=await inspectRemoteMedia(target);
-  if(!streams.some(x=>x.codec_type==='audio')&&!streams.some(x=>x.codec_type==='subtitle'))return res.status(422).json({error:'No audio or subtitle tracks were found.'});
+  if(!streams.some(x=>x.codec_type==='video'))return res.status(422).json({error:'No video stream was found.'});
   const token=randomUUID();
-  remoteMediaStore.set(token,{url:target,streams,expires:Date.now()+REMOTE_MEDIA_TTL});
+  remoteMediaStore.set(token,{url:target,streams,expires:Date.now()+REMOTE_MEDIA_TTL,engineDir:null});
   const publicStreams=streams.filter(x=>x.codec_type==='audio'||x.codec_type==='subtitle').map(x=>({index:x.index,codec_type:x.codec_type,codec_name:x.codec_name||'',language:x.tags?.language||x.tags?.language_ietf||'',title:x.tags?.title||x.tags?.handler_name||'',channels:x.channels||0,channel_layout:x.channel_layout||'',sample_rate:x.sample_rate||''}));
   res.json({token,expiresIn:REMOTE_MEDIA_TTL/1000,streams:publicStreams});
  }catch(err){
@@ -111,6 +114,7 @@ const LOCAL_MEDIA_DIR='/tmp/streamvg-local';
 const LOCAL_MEDIA_MAX=8*1024*1024*1024;
 
 const localMediaCleanup=async token=>{
+  await stopMediaEngine(token);
  const item=localMediaStore.get(token);
  if(!item)return;
  localMediaStore.delete(token);
@@ -233,6 +237,64 @@ app.get('/api/local-audio/:token',async(req,res)=>{
  res.setHeader('X-StreamVG-Audio-Track',String(track));
  ff.stdout.pipe(res);
  res.on('close',()=>{if(!res.writableEnded&&!ff.killed)ff.kill('SIGTERM')});
+});
+
+
+const mediaEngineCors=(req,res)=>{res.setHeader('Access-Control-Allow-Origin','https://streamvg.pages.dev');res.setHeader('Access-Control-Allow-Methods','GET,POST,OPTIONS');res.setHeader('Access-Control-Allow-Headers','Content-Type,Range');res.setHeader('Cache-Control','no-store')};
+app.post('/api/media-engine/:kind/:token/start',async(req,res)=>{
+ mediaEngineCors(req,res);
+ const {kind,token}=req.params;
+ const item=kind==='local'?localMediaStore.get(token):kind==='remote'?remoteMediaGet(token):null;
+ if(!item||item.expires<Date.now())return res.status(410).json({error:'Media session expired. Open the source again.'});
+ const streams=item.streams||[],videoStream=streams.find(x=>x.codec_type==='video');
+ if(!videoStream)return res.status(415).json({error:'No video stream is available.'});
+ const audioStreams=streams.filter(x=>x.codec_type==='audio');
+ const requested=Number(req.body?.audioTrack??0);
+ if(!Number.isInteger(requested)||requested < -1 || requested>=audioStreams.length)return res.status(400).json({error:'Invalid audio track.'});
+ await stopMediaEngine(token);
+ const dir=path.join(MEDIA_ENGINE_DIR,token);
+ await mkdir(dir,{recursive:true});
+ const input=kind==='local'?item.path:item.url;
+ if(kind==='remote'){
+  try{const u=new URL(input);if(!['http:','https:'].includes(u.protocol)||u.username||u.password||await blockedHost(u.hostname))throw new Error('This media URL is not allowed.')}
+  catch(e){await rm(dir,{recursive:true,force:true});return res.status(400).json({error:e.message||'Invalid media URL.'})}
+ }
+ const args=['-hide_banner','-loglevel','warning','-y'];
+ if(kind==='remote')args.push('-rw_timeout','30000000','-reconnect','1','-reconnect_streamed','1','-reconnect_delay_max','5');
+ args.push('-i',input,'-map','0:v:0');
+ if(requested>=0&&audioStreams[requested])args.push('-map','0:'+String(audioStreams[requested].index));
+ else args.push('-an');
+ args.push('-sn','-dn','-c:v','libx264','-preset','veryfast','-crf','23','-pix_fmt','yuv420p');
+ if(requested>=0&&audioStreams[requested])args.push('-c:a','aac','-b:a','192k','-ac','2');
+ args.push('-max_muxing_queue_size','2048','-f','hls','-hls_time','4','-hls_playlist_type','event','-hls_flags','independent_segments+temp_file','-hls_segment_filename',path.join(dir,'segment-%06d.ts'),path.join(dir,'index.m3u8'));
+ const ff=spawn('ffmpeg',args,{stdio:['ignore','ignore','pipe']});
+ mediaEngineProcesses.set(token,ff);
+ let stderr='';
+ ff.stderr.on('data',b=>{stderr=(stderr+b.toString()).slice(-12000)});
+ ff.once('close',code=>{if(mediaEngineProcesses.get(token)===ff)mediaEngineProcesses.delete(token);if(code!==0)console.error(JSON.stringify({event:'media-engine-ffmpeg-exit',kind,token,code,stderr:stderr.slice(-3000)}))});
+ ff.once('error',e=>console.error(JSON.stringify({event:'media-engine-ffmpeg-error',kind,token,error:String(e.message||e)})));
+ const deadline=Date.now()+45000;
+ let ready=false;
+ while(Date.now()<deadline&&!ff.killed){
+  try{await access(path.join(dir,'index.m3u8'));const files=await readdir(dir);if(files.some(x=>/^segment-\\d+\\.ts$/.test(x))){ready=true;break}}catch{}
+  if(ff.exitCode!==null)break;
+  await new Promise(r=>setTimeout(r,200));
+ }
+ if(!ready){await stopMediaEngine(token);return res.status(422).json({error:'FFmpeg could not start this stream. The source may be unsupported, protected, expired, or unreachable.',details:stderr.slice(-1200)})}
+ item.engineDir=dir;item.engineTrack=requested;
+ res.json({url:'/api/media-engine/'+kind+'/'+token+'/index.m3u8',format:'hls',videoCodec:'h264',audioCodec:requested>=0?'aac':'none',audioTrack:requested});
+});
+app.get('/api/media-engine/:kind/:token/:file',async(req,res)=>{
+ mediaEngineCors(req,res);
+ const {kind,token,file}=req.params;
+ const item=kind==='local'?localMediaStore.get(token):kind==='remote'?remoteMediaGet(token):null;
+ if(!item||!item.engineDir||item.expires<Date.now())return res.status(410).send('Media engine session expired.');
+ if(!/^(index\\.m3u8|segment-\\d+\\.ts)$/.test(file))return res.status(400).send('Invalid media segment.');
+ const full=path.join(item.engineDir,file);
+ try{await access(full)}catch{return res.status(404).send('Media segment is not ready yet.')}
+ res.setHeader('Cache-Control','no-store');
+ res.type(file.endsWith('.m3u8')?'application/vnd.apple.mpegurl':'video/mp2t');
+ res.sendFile(full,err=>{if(err&&!res.headersSent)res.status(500).end('Could not serve media segment')});
 });
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..','dist');
@@ -408,7 +470,7 @@ const extractMedia=(html,base)=>{
 };
 
 setInterval(()=>{const now=Date.now();for(const[token,item]of localMediaStore)if(item.expires<now)localMediaCleanup(token)},60000).unref();
-setInterval(()=>{const now=Date.now();for(const[token,item]of remoteMediaStore)if(item.expires<now)remoteMediaStore.delete(token)},60000).unref();
+setInterval(()=>{const now=Date.now();for(const[token,item]of remoteMediaStore)if(item.expires<now){remoteMediaStore.delete(token);stopMediaEngine(token)}},60000).unref();
 setInterval(()=>{const now=Date.now();for(const[k,v]of rate)if(now-v.at>RATE_WINDOW*2)rate.delete(k)},RATE_WINDOW*2).unref();
 const API_PUBLIC=(process.env.PUBLIC_API_URL||'https://streamvg-web-production.up.railway.app').replace(/\/$/,'');
 setInterval(()=>{const now=Date.now();for(const[k,v]of relayStore)if(v.expires<now)relayStore.delete(k)},60000).unref();
