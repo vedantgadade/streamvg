@@ -102,11 +102,13 @@ app.get('/api/remote-audio/:token/:track/:session/index.m3u8',async(req,res)=>{
   const segmentPattern=path.join(dir,'segment-%06d.ts');
   const seekArgs=start>0?['-ss',String(start)]:[];
   const ff=spawn('ffmpeg',[
-   '-hide_banner','-loglevel','warning','-fflags','nobuffer','-flags','low_delay',
+   '-hide_banner','-loglevel','warning',
    '-reconnect','1','-reconnect_streamed','1','-reconnect_delay_max','5',
-   '-reconnect_at_eof','1','-reconnect_on_network_error','1','-reconnect_on_http_error','4xx,5xx',
+   '-reconnect_on_network_error','1','-reconnect_on_http_error','4xx,5xx',
    '-rw_timeout','20000000',...seekArgs,'-i',item.url,
-   '-map','0:'+String(stream.index),'-vn','-sn','-dn','-c:a','aac','-b:a','192k','-ac','2',
+   '-map','0:'+String(stream.index),'-vn','-sn','-dn',
+   '-c:a','aac','-profile:a','aac_low','-b:a','192k','-ar','48000','-ac','2',
+   '-af','aresample=async=1:first_pts=0',
    '-f','hls','-hls_time','4','-hls_list_size','0','-hls_playlist_type','event',
    '-hls_flags','independent_segments+temp_file','-hls_segment_filename',segmentPattern,playlist
   ],{stdio:['ignore','ignore','pipe']});
@@ -115,7 +117,7 @@ app.get('/api/remote-audio/:token/:track/:session/index.m3u8',async(req,res)=>{
   ff.stderr.on('data',chunk=>{const message=chunk.toString();job.stderr=(job.stderr+message).slice(-8000);if(message.trim())console.error('[ffmpeg remote-audio-hls]',message.trimEnd())});
   ff.once('error',err=>{job.exitCode=-1;job.error=String(err?.message||err);console.error(JSON.stringify({event:'remote-audio-hls-error',token:req.params.token,track,session,error:job.error}))});
   ff.once('close',code=>{job.exitCode=code;console.log(JSON.stringify({event:'remote-audio-hls-exit',token:req.params.token,track,session,code,stderr:job.stderr.slice(-1600)}))});
-  console.log(JSON.stringify({event:'remote-audio-hls-start',token:req.params.token,track,session,start}));
+  console.log(JSON.stringify({event:'remote-audio-hls-start',token:req.params.token,track,session,start,codec:stream.codec_name||'',channels:stream.channels||0,channelLayout:stream.channel_layout||'',outputCodec:'aac',outputChannels:2}));
  }
  const ready=await waitForHlsPlaylist(job);
  if(!ready){if(job.exitCode!==undefined){return res.status(502).send('Audio HLS generation failed.')}return res.status(503).set('Retry-After','2').send('Audio playlist is starting. Retry shortly.')}
@@ -213,7 +215,7 @@ app.get('/api/local-audio/:token',async(req,res)=>{
  const stream=audio[track],codec=String(stream.codec_name||'');
  console.log(JSON.stringify({event:'local-audio-extraction-start',token:req.params.token,track,codec}));
  const seekArgs=start>0?['-ss',String(start)]:[];
- const ff=spawn('ffmpeg',['-hide_banner','-loglevel','info','-fflags','nobuffer','-flags','low_delay','-rw_timeout','20000000',...seekArgs,'-i',item.path,'-map','0:a:'+track,'-vn','-c:a','aac','-b:a','192k','-ac','2','-movflags','+frag_keyframe+empty_moov+default_base_moof','-f','mp4','pipe:1'],{stdio:['ignore','pipe','pipe']});
+ const ff=spawn('ffmpeg',['-hide_banner','-loglevel','info','-rw_timeout','20000000',...seekArgs,'-i',item.path,'-map','0:a:'+track,'-vn','-c:a','aac','-profile:a','aac_low','-b:a','192k','-ar','48000','-ac','2','-af','aresample=async=1:first_pts=0','-movflags','+frag_keyframe+empty_moov+default_base_moof','-f','mp4','pipe:1'],{stdio:['ignore','pipe','pipe']});
  let stderr='';
  ff.stderr.on('data',chunk=>{const message=chunk.toString();stderr+=message;if(stderr.length>12000)stderr=stderr.slice(-12000);if(message.trim())console.error('[ffmpeg local-audio]',message.trimEnd())});
  ff.once('error',err=>{console.error(JSON.stringify({event:'local-audio-extraction-error',token:req.params.token,track,codec,error:String(err?.stack||err)}));if(!res.headersSent)res.status(500).json({error:String(err?.message||'FFmpeg could not start')});else res.destroy(err)});
