@@ -129,7 +129,7 @@ app.get('/api/remote-audio/:token/:track/:session/:segment',async(req,res)=>{
  if(!item)return res.status(410).send('Remote media session expired.');
  const track=Number(req.params.track),session=String(req.params.session||''),segment=String(req.params.segment||'');
  if(!Number.isInteger(track)||track<0||track>=item.streams.filter(x=>x.codec_type==='audio').length)return res.status(400).send('Invalid audio track.');
- if(!/^[a-f0-9-]{20,64}$/i.test(session)||!/^segment-\\d{6}\\.ts$/.test(segment))return res.status(400).send('Invalid audio segment.');
+ if(!/^[a-f0-9-]{20,64}$/i.test(session)||!/^segment-\d{6}\.ts$/.test(segment))return res.status(400).send('Invalid audio segment.');
  const job=remoteAudioHlsStore.get(session);
  if(!job||job.token!==req.params.token||job.track!==track)return res.status(404).send('Audio segment not found.');
  const filePath=path.join(job.dir,segment);
