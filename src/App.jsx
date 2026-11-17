@@ -81,8 +81,8 @@ export default function App(){
   if(isYouTube(input)){const e=youtubeEmbed(input);if(e){destroy();setRemoteSession('');setSource(original);setLevels([]);setLevel(-1);setResume(null);setEmbedSrc(e);setEngine('YouTube Player');if(!fromHistory)addHistory(original);window.history.pushState({},'', '?url='+encodeURIComponent(original));return}}
   if(isTeraBox(input)){try{playable=await resolveUrl(input)}catch{setEngine('TeraBox • No playable media found');alert('StreamVG could not resolve this TeraBox video.');return}}else{try{playable=await resolveUrl(input)}catch{setEngine('Resolver • No playable media found');alert('StreamVG could not find a playable video from this URL.');return}}
   destroy();localFileRef.current=null;localStreamsRef.current=[];localAudioCache.current.clear();localSubtitleCache.current.clear();setMkvStatus('');setSource(original);setLevels([]);setLevel(-1);setResume(null);
-  const v=video.current;const actual=proxy?escUrl(playable):playable;const low=playable.toLowerCase();
-  setEngine('MoviPlayer • FFmpeg WASM + WebCodecs');setMoviMode(true);setMoviSrc(actual);
+  const v=video.current;const actual=proxy?escUrl(playable):playable;const low=playable.toLowerCase();sourceRef.current=actual;
+  setEngine('MoviPlayer • FFmpeg WASM + WebCodecs');setMoviMode(true);setMoviSrc(actual);prepareRemoteMedia(actual);
   if(!original.startsWith('blob:'))addHistory(original);
   if(!fromHistory){const p=Number(localStorage.getItem('streamvg-pos-'+input)||0);if(p>5)setResume(p)}
   window.history.pushState({},'',original.startsWith('blob:')?location.pathname:'?url='+encodeURIComponent(original));
