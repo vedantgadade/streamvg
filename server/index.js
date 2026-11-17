@@ -6,7 +6,7 @@ import { lookup } from 'node:dns/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
-import { mkdir, unlink, rm, stat } from 'node:fs/promises';
+import { mkdir, unlink, rm, stat, writeFile } from 'node:fs/promises';
 import { createWriteStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { spawn } from 'node:child_process';
@@ -102,11 +102,13 @@ app.get('/api/remote-audio/:token/:track/:session/index.m3u8',async(req,res)=>{
   const segmentPattern=path.join(dir,'segment-%06d.ts');
   const seekArgs=start>0?['-ss',String(start)]:[];
   const ff=spawn('ffmpeg',[
-   '-hide_banner','-loglevel','warning','-fflags','nobuffer','-flags','low_delay',
+   '-hide_banner','-loglevel','warning',
    '-reconnect','1','-reconnect_streamed','1','-reconnect_delay_max','5',
-   '-reconnect_at_eof','1','-reconnect_on_network_error','1','-reconnect_on_http_error','4xx,5xx',
+   '-reconnect_on_network_error','1','-reconnect_on_http_error','4xx,5xx',
    '-rw_timeout','20000000',...seekArgs,'-i',item.url,
-   '-map','0:'+String(stream.index),'-vn','-sn','-dn','-c:a','aac','-b:a','192k','-ac','2',
+   '-map','0:'+String(stream.index),'-vn','-sn','-dn',
+   '-c:a','aac','-profile:a','aac_low','-b:a','192k','-ar','48000','-ac','2',
+   '-af','aresample=async=1:first_pts=0',
    '-f','hls','-hls_time','4','-hls_list_size','0','-hls_playlist_type','event',
    '-hls_flags','independent_segments+temp_file','-hls_segment_filename',segmentPattern,playlist
   ],{stdio:['ignore','ignore','pipe']});
@@ -115,7 +117,7 @@ app.get('/api/remote-audio/:token/:track/:session/index.m3u8',async(req,res)=>{
   ff.stderr.on('data',chunk=>{const message=chunk.toString();job.stderr=(job.stderr+message).slice(-8000);if(message.trim())console.error('[ffmpeg remote-audio-hls]',message.trimEnd())});
   ff.once('error',err=>{job.exitCode=-1;job.error=String(err?.message||err);console.error(JSON.stringify({event:'remote-audio-hls-error',token:req.params.token,track,session,error:job.error}))});
   ff.once('close',code=>{job.exitCode=code;console.log(JSON.stringify({event:'remote-audio-hls-exit',token:req.params.token,track,session,code,stderr:job.stderr.slice(-1600)}))});
-  console.log(JSON.stringify({event:'remote-audio-hls-start',token:req.params.token,track,session,start}));
+  console.log(JSON.stringify({event:'remote-audio-hls-start',token:req.params.token,track,session,start,codec:stream.codec_name||'',channels:stream.channels||0,channelLayout:stream.channel_layout||'',outputCodec:'aac',outputChannels:2}));
  }
  const ready=await waitForHlsPlaylist(job);
  if(!ready){if(job.exitCode!==undefined){return res.status(502).send('Audio HLS generation failed.')}return res.status(503).set('Retry-After','2').send('Audio playlist is starting. Retry shortly.')}
@@ -158,6 +160,52 @@ const localMediaStore=new Map();
 const LOCAL_MEDIA_TTL=8*60*60*1000;
 const LOCAL_MEDIA_DIR='/tmp/streamvg-local';
 const LOCAL_MEDIA_MAX=8*1024*1024*1024;
+
+const localUploadStore=new Map();
+const LOCAL_UPLOAD_TTL=60*60*1000;
+const LOCAL_UPLOAD_CHUNK_MAX=16*1024*1024;
+app.post('/api/local-session/start',async(req,res)=>{
+ setStreamVGCors(req,res);res.setHeader('Access-Control-Allow-Methods','POST,OPTIONS');res.setHeader('Access-Control-Allow-Headers','Content-Type');
+ const size=Number(req.body?.size);
+ if(!Number.isSafeInteger(size)||size<=0||size>LOCAL_MEDIA_MAX)return res.status(413).json({error:'Local file size is invalid or exceeds the 8 GB limit.'});
+ const token=randomUUID(),filePath=path.join(LOCAL_MEDIA_DIR,token+'.upload');
+ try{await mkdir(LOCAL_MEDIA_DIR,{recursive:true});await writeFile(filePath,Buffer.alloc(0));localUploadStore.set(token,{path:filePath,size,received:0,expires:Date.now()+LOCAL_UPLOAD_TTL});res.json({token,chunkSize:LOCAL_UPLOAD_CHUNK_MAX})}
+ catch(err){await unlink(filePath).catch(()=>{});res.status(500).json({error:'Could not start local upload.'})}
+});
+app.post('/api/local-session/:token/chunk',async(req,res)=>{
+ setStreamVGCors(req,res);res.setHeader('Access-Control-Allow-Methods','POST,OPTIONS');res.setHeader('Access-Control-Allow-Headers','Content-Type');
+ const item=localUploadStore.get(req.params.token);
+ if(!item||item.expires<Date.now()){if(item){localUploadStore.delete(req.params.token);await unlink(item.path).catch(()=>{})}return res.status(410).json({error:'Local upload session expired.'})}
+ const offset=Number(req.query.offset),declared=Number(req.headers['content-length']||0);
+ if(!Number.isSafeInteger(offset)||offset!==item.received)return res.status(409).json({error:'Upload chunk is out of order.',expectedOffset:item.received});
+ if(!Number.isSafeInteger(declared)||declared<=0||declared>LOCAL_UPLOAD_CHUNK_MAX||item.received+declared>item.size)return res.status(413).json({error:'Upload chunk size is invalid.'});
+ let bytes=0;
+ try{
+  const out=createWriteStream(item.path,{flags:'a'});
+  req.on('data',chunk=>{bytes+=chunk.length});
+  await pipeline(req,out);
+  if(bytes!==declared)throw new Error('Upload chunk size did not match its content length.');
+  item.received+=bytes;item.expires=Date.now()+LOCAL_UPLOAD_TTL;
+  res.json({received:item.received,total:item.size});
+ }catch(err){console.error(JSON.stringify({event:'local-upload-chunk-error',token:req.params.token,error:String(err?.message||err)}));if(!res.headersSent)res.status(400).json({error:'Upload chunk failed. Please retry the file upload.'})}
+});
+app.post('/api/local-session/:token/finish',async(req,res)=>{
+ setStreamVGCors(req,res);res.setHeader('Access-Control-Allow-Methods','POST,OPTIONS');res.setHeader('Access-Control-Allow-Headers','Content-Type');
+ const item=localUploadStore.get(req.params.token);
+ if(!item||item.expires<Date.now())return res.status(410).json({error:'Local upload session expired.'});
+ if(item.received!==item.size)return res.status(409).json({error:'The complete movie has not been uploaded.',received:item.received,total:item.size});
+ try{
+  const{stdout,stderr}=await execFileAsync('ffprobe',['-v','error','-show_streams','-show_format','-of','json',item.path],{timeout:120000,maxBuffer:20*1024*1024});
+  if(stderr)console.log(JSON.stringify({event:'local-media-probe-stderr',token:req.params.token,stderr:String(stderr).slice(-3000)}));
+  const probe=JSON.parse(stdout||'{}'),streams=Array.isArray(probe.streams)?probe.streams:[];
+  const audio=streams.filter(x=>x.codec_type==='audio').map((x,i)=>({i,index:x.index,codec:x.codec_name||'',language:x.tags?.language||x.tags?.language_ietf||'',title:x.tags?.title||x.tags?.handler_name||('Audio '+(i+1)),channels:x.channels||0,sampleRate:x.sample_rate||'',bitrate:x.bit_rate||''}));
+  console.log(JSON.stringify({event:'local-media-upload-complete',token:req.params.token,size:item.received,audio}));
+  if(!audio.length){localUploadStore.delete(req.params.token);await unlink(item.path).catch(()=>{});return res.status(422).json({error:'No audio stream found in local media.',streams})}
+  localUploadStore.delete(req.params.token);localMediaStore.set(req.params.token,{path:item.path,streams,expires:Date.now()+LOCAL_MEDIA_TTL});
+  res.json({token:req.params.token,size:item.received,streams});
+ }catch(err){localUploadStore.delete(req.params.token);await unlink(item.path).catch(()=>{});console.error(JSON.stringify({event:'local-media-session-error',token:req.params.token,error:String(err?.stack||err)}));res.status(422).json({error:'FFprobe could not read the uploaded movie: '+String(err?.message||err).slice(0,240)})}
+});
+
 
 const localMediaCleanup=async token=>{
  const item=localMediaStore.get(token);
@@ -213,7 +261,7 @@ app.get('/api/local-audio/:token',async(req,res)=>{
  const stream=audio[track],codec=String(stream.codec_name||'');
  console.log(JSON.stringify({event:'local-audio-extraction-start',token:req.params.token,track,codec}));
  const seekArgs=start>0?['-ss',String(start)]:[];
- const ff=spawn('ffmpeg',['-hide_banner','-loglevel','info','-fflags','nobuffer','-flags','low_delay','-rw_timeout','20000000',...seekArgs,'-i',item.path,'-map','0:a:'+track,'-vn','-c:a','aac','-b:a','192k','-ac','2','-movflags','+frag_keyframe+empty_moov+default_base_moof','-f','mp4','pipe:1'],{stdio:['ignore','pipe','pipe']});
+ const ff=spawn('ffmpeg',['-hide_banner','-loglevel','info','-rw_timeout','20000000',...seekArgs,'-i',item.path,'-map','0:a:'+track,'-vn','-c:a','aac','-profile:a','aac_low','-b:a','192k','-ar','48000','-ac','2','-af','aresample=async=1:first_pts=0','-movflags','+frag_keyframe+empty_moov+default_base_moof','-f','mp4','pipe:1'],{stdio:['ignore','pipe','pipe']});
  let stderr='';
  ff.stderr.on('data',chunk=>{const message=chunk.toString();stderr+=message;if(stderr.length>12000)stderr=stderr.slice(-12000);if(message.trim())console.error('[ffmpeg local-audio]',message.trimEnd())});
  ff.once('error',err=>{console.error(JSON.stringify({event:'local-audio-extraction-error',token:req.params.token,track,codec,error:String(err?.stack||err)}));if(!res.headersSent)res.status(500).json({error:String(err?.message||'FFmpeg could not start')});else res.destroy(err)});
@@ -344,6 +392,14 @@ app.get('/api/resolve',allowApi,async(req,res)=>{
  }catch{res.status(502).json({error:'Could not inspect this URL'})}
 });
 
+const relayPlaylistUrl=(path,url)=>path+'?url='+encodeURIComponent(url);
+const rewriteHlsPlaylist=(body,base,makeUrl)=>{
+ return body.split(/\r?\n/).map(line=>{
+  if(!line)return line;
+  if(line.startsWith('#'))return line.replace(/URI="([^"]+)"/g,(_match,uri)=>{try{return 'URI="'+makeUrl(new URL(uri,base).href)+'"'}catch{return 'URI="'+uri+'"'}});
+  try{return makeUrl(new URL(line,base).href)}catch{return line}
+ }).join('\n');
+};
 app.get('/api/stream/:token',allowApi,async(req,res)=>{
  res.setHeader('Cache-Control','no-store');
  try{
@@ -351,16 +407,39 @@ app.get('/api/stream/:token',allowApi,async(req,res)=>{
   const target=req.query.url?new URL(req.query.url):new URL(item.url);
   if(!['http:','https:'].includes(target.protocol)||await blockedHost(target.hostname))return res.status(400).send('URL not allowed');
   const headers={...item.headers};delete headers.referer;delete headers.Referer;delete headers.referrer;delete headers.Referrer;for(const h of ['range','accept','accept-language']){const v=req.headers[h];if(v)headers[h]=v}if(!headers['user-agent']&&!headers['User-Agent'])headers['user-agent']='Mozilla/5.0 StreamVG Relay';
-  const r=await fetch(target,{redirect:'follow',headers});const final=new URL(r.url);if(await blockedHost(final.hostname))return res.status(400).send('Redirect target not allowed');
+  const controller=new AbortController();const abort=()=>controller.abort();req.on('aborted',abort);res.on('close',()=>{if(!res.writableEnded)abort()});
+  const r=await fetch(target,{redirect:'follow',headers,signal:controller.signal});const final=new URL(r.url);if(await blockedHost(final.hostname))return res.status(400).send('Redirect target not allowed');
   const type=r.headers.get('content-type')||'';
   if(type.includes('mpegurl')||target.pathname.toLowerCase().endsWith('.m3u8')){
-   let text=await r.text();const base=new URL('.',r.url);text=text.split(/\r?\n/).map(line=>{if(!line||line.startsWith('#'))return line;try{return '/api/stream/'+req.params.token+'?url='+encodeURIComponent(new URL(line,base).href)}catch{return line}}).join('\n');
-   res.status(r.status).setHeader('Content-Type','application/vnd.apple.mpegurl');res.setHeader('Access-Control-Allow-Origin','*');return res.send(text);
+   const body=await r.text();const base=new URL(r.url);const rewritten=rewriteHlsPlaylist(body,base,url=>'/api/stream/'+req.params.token+'?url='+encodeURIComponent(url));
+   res.status(r.status).setHeader('Content-Type','application/vnd.apple.mpegurl');res.setHeader('Access-Control-Allow-Origin','*');return res.send(rewritten);
   }
-  res.status(r.status);for(const h of ['content-type','content-length','content-range','accept-ranges','cache-control']){const v=r.headers.get(h);if(v)res.setHeader(h,v)}res.setHeader('Access-Control-Allow-Origin','*');if(r.body){for await(const chunk of r.body)res.write(chunk)}res.end();
- }catch(err){res.status(502).send('Relay error: '+(err?.message||'upstream failure'))}
+  res.status(r.status);for(const h of ['content-type','content-length','content-range','accept-ranges','cache-control']){const v=r.headers.get(h);if(v)res.setHeader(h,v)}res.setHeader('Access-Control-Allow-Origin','*');
+  if(r.body){for await(const chunk of r.body){if(res.destroyed)break;if(!res.write(Buffer.from(chunk)))await new Promise(resolve=>res.once('drain',resolve))}}if(!res.destroyed)res.end();
+ }catch(err){if(!res.headersSent&&!res.destroyed)res.status(502).send('Relay error: '+(err?.message||'upstream failure'))}
 });
 
+app.all('/api/proxy/:encoded',allowApi,async(req,res)=>{
+ try{
+  if(req.method!=='GET'&&req.method!=='HEAD')return res.sendStatus(405);
+  const encoded=String(req.params.encoded||'').replace(/-/g,'+').replace(/_/g,'/');
+  const target=Buffer.from(encoded,'base64').toString('utf8');
+  if(!target)return res.status(400).send('Missing encoded url');
+  const u=new URL(target);if(!['http:','https:'].includes(u.protocol)||await blockedHost(u.hostname))return res.status(400).send('URL not allowed');
+  const headers={};for(const h of ['range','accept','accept-language','user-agent']){const v=req.headers[h];if(v)headers[h]=v}
+  const controller=new AbortController();const abort=()=>controller.abort();req.on('aborted',abort);res.on('close',()=>{if(!res.writableEnded)abort()});
+  const r=await fetch(u,{method:req.method,redirect:'follow',headers,signal:controller.signal});const final=new URL(r.url);if(await blockedHost(final.hostname))return res.status(400).send('Redirect target not allowed');
+  const type=r.headers.get('content-type')||'';
+  if(req.method==='GET'&&(type.includes('mpegurl')||u.pathname.toLowerCase().endsWith('.m3u8'))){
+   const body=await r.text();const base=new URL(r.url);const rewritten=rewriteHlsPlaylist(body,base,url=>'/api/proxy/'+Buffer.from(url).toString('base64url'));
+   res.status(r.status).setHeader('Content-Type','application/vnd.apple.mpegurl');res.setHeader('Access-Control-Allow-Origin','*');return res.send(rewritten);
+  }
+  res.status(r.status);for(const h of ['content-type','content-length','content-range','accept-ranges','last-modified','etag','cache-control']){const v=r.headers.get(h);if(v)res.setHeader(h,v)}
+  res.setHeader('Access-Control-Allow-Origin','*');res.setHeader('Access-Control-Expose-Headers','Content-Length,Content-Range,Accept-Ranges,Content-Type');
+  if(req.method==='HEAD'||!r.body)return res.end();
+  for await(const chunk of r.body){if(res.destroyed)break;if(!res.write(Buffer.from(chunk)))await new Promise(resolve=>res.once('drain',resolve))}if(!res.destroyed)res.end();
+ }catch(err){if(!res.headersSent&&!res.destroyed)res.status(502).send('Proxy error: '+(err?.message||'upstream failure'))}
+});
 app.get('/api/proxy',allowApi,async(req,res)=>{
  try{
   const target=req.query.url;if(!target)return res.status(400).send('Missing url');
@@ -369,9 +448,9 @@ app.get('/api/proxy',allowApi,async(req,res)=>{
   const r=await fetch(u,{redirect:'follow',headers});const final=new URL(r.url);if(await blockedHost(final.hostname))return res.status(400).send('Redirect target not allowed');
   const type=r.headers.get('content-type')||'';
   if(type.includes('mpegurl')||u.pathname.toLowerCase().endsWith('.m3u8')){
-   let text=await r.text();const base=new URL('.',r.url);
-   text=text.split(/\r?\n/).map(line=>{if(!line||line.startsWith('#'))return line;try{return '/api/proxy?url='+encodeURIComponent(new URL(line,base).href)}catch{return line}}).join('\n');
-   res.setHeader('Content-Type','application/vnd.apple.mpegurl');res.setHeader('Access-Control-Allow-Origin','*');return res.send(text);
+   const body=await r.text();const base=new URL(r.url);
+   const rewritten=rewriteHlsPlaylist(body,base,url=>'/api/proxy/'+Buffer.from(url).toString('base64url'));
+   res.setHeader('Content-Type','application/vnd.apple.mpegurl');res.setHeader('Access-Control-Allow-Origin','*');return res.send(rewritten);
   }
   res.status(r.status);for(const h of ['content-type','content-length','content-range','accept-ranges']){const v=r.headers.get(h);if(v)res.setHeader(h,v)}
   res.setHeader('Access-Control-Allow-Origin','*');if(r.body){for await(const chunk of r.body)res.write(chunk)}res.end();
@@ -400,6 +479,7 @@ const extractMedia=(html,base)=>{
 };
 
 setInterval(()=>{const now=Date.now();for(const[token,item]of localMediaStore)if(item.expires<now)localMediaCleanup(token)},60000).unref();
+setInterval(()=>{const now=Date.now();for(const[token,item]of localUploadStore)if(item.expires<now){localUploadStore.delete(token);unlink(item.path).catch(()=>{})}},60000).unref();
 setInterval(()=>{const now=Date.now();for(const[token,item]of remoteMediaStore)if(item.expires<now)remoteMediaStore.delete(token)},60000).unref();
 setInterval(()=>{const now=Date.now();for(const[k,v]of rate)if(now-v.at>RATE_WINDOW*2)rate.delete(k)},RATE_WINDOW*2).unref();
 const API_PUBLIC=(process.env.PUBLIC_API_URL||'https://streamvg-web-production-22879f12.up.railway.app').replace(/\/$/,'');
