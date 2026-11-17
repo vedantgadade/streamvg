@@ -82,9 +82,9 @@ app.get('/api/remote-audio/:token',async(req,res)=>{
  if(!Number.isInteger(track)||track<0||track>=audio.length)return res.status(400).json({error:'Invalid audio track.'});
  const stream=audio[track];
  const seekArgs=start>0?['-ss',String(start)]:[];
- const ff=spawn('ffmpeg',['-hide_banner','-loglevel','error','-reconnect','1','-reconnect_streamed','1','-reconnect_delay_max','5','-reconnect_at_eof','1','-reconnect_on_network_error','1','-reconnect_on_http_error','4xx,5xx','-rw_timeout','20000000',...seekArgs,'-i',item.url,'-map','0:'+String(stream.index),'-vn','-sn','-dn','-c:a','aac','-ac','2','-b:a','192k','-movflags','+frag_keyframe+empty_moov+default_base_moof','-f','mp4','pipe:1'],{stdio:['ignore','pipe','pipe']});
+ const ff=spawn('ffmpeg',['-hide_banner','-loglevel','error','-reconnect','1','-reconnect_streamed','1','-reconnect_delay_max','5','-reconnect_at_eof','1','-reconnect_on_network_error','1','-reconnect_on_http_error','4xx,5xx','-rw_timeout','20000000',...seekArgs,'-i',item.url,'-map','0:'+String(stream.index),'-vn','-sn','-dn','-c:a','aac','-b:a','192k','-ac','2','-movflags','+frag_keyframe+empty_moov+default_base_moof','-f','mp4','pipe:1'],{stdio:['ignore','pipe','pipe']});
  let stderr='';
- ff.stderr.on('data',chunk=>{stderr+=chunk.toString();if(stderr.length>8000)stderr=stderr.slice(-8000)});
+ ff.stderr.on('data',chunk=>{const message=chunk.toString();stderr+=message;if(stderr.length>8000)stderr=stderr.slice(-8000);if(message.trim())console.error('[ffmpeg remote-audio]',message.trimEnd())});
  ff.once('error',err=>{console.error(JSON.stringify({event:'remote-audio-error',track,error:String(err?.message||err)}));if(!res.headersSent)res.status(502).end('Audio extraction failed');else res.destroy(err)});
  ff.once('close',code=>{if(code!==0&&!clientDisconnected)console.error(JSON.stringify({event:'remote-audio-exit',track,code,stderr:stderr.slice(-1500)}))});
  res.status(200);res.setHeader('Content-Type','audio/mp4');res.setHeader('Cache-Control','no-store');res.setHeader('X-StreamVG-Audio-Track',String(track));
@@ -168,9 +168,9 @@ app.get('/api/local-audio/:token',async(req,res)=>{
  const stream=audio[track],codec=String(stream.codec_name||'');
  console.log(JSON.stringify({event:'local-audio-extraction-start',token:req.params.token,track,codec}));
  const seekArgs=start>0?['-ss',String(start)]:[];
- const ff=spawn('ffmpeg',['-hide_banner','-loglevel','info','-rw_timeout','20000000',...seekArgs,'-i',item.path,'-map','0:a:'+track,'-vn','-c:a','aac','-ac','2','-b:a','192k','-movflags','+frag_keyframe+empty_moov+default_base_moof','-f','mp4','pipe:1'],{stdio:['ignore','pipe','pipe']});
+ const ff=spawn('ffmpeg',['-hide_banner','-loglevel','info','-rw_timeout','20000000',...seekArgs,'-i',item.path,'-map','0:a:'+track,'-vn','-c:a','aac','-b:a','192k','-ac','2','-movflags','+frag_keyframe+empty_moov+default_base_moof','-f','mp4','pipe:1'],{stdio:['ignore','pipe','pipe']});
  let stderr='';
- ff.stderr.on('data',chunk=>{stderr+=chunk.toString();if(stderr.length>12000)stderr=stderr.slice(-12000)});
+ ff.stderr.on('data',chunk=>{const message=chunk.toString();stderr+=message;if(stderr.length>12000)stderr=stderr.slice(-12000);if(message.trim())console.error('[ffmpeg local-audio]',message.trimEnd())});
  ff.once('error',err=>{console.error(JSON.stringify({event:'local-audio-extraction-error',token:req.params.token,track,codec,error:String(err?.stack||err)}));if(!res.headersSent)res.status(500).json({error:String(err?.message||'FFmpeg could not start')});else res.destroy(err)});
  let clientDisconnected=false;ff.once('close',code=>{if(code!==0&&!clientDisconnected)console.error(JSON.stringify({event:'local-audio-extraction-failed',token:req.params.token,track,codec,code,stderr:stderr.slice(-4000)}));if(code!==0&&!clientDisconnected&&!res.destroyed)res.destroy(new Error('FFmpeg audio extraction failed with code '+code))});
  res.statusCode=200;
