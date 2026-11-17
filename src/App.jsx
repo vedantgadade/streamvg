@@ -1,5 +1,4 @@
 import React,{useEffect,useRef,useState}from'react';
-import 'movi-player';
 import Hls from'hls.js';
 import dashjs from'dashjs';
 import{FFmpeg}from'@ffmpeg/ffmpeg';
