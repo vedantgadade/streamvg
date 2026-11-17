@@ -29,15 +29,15 @@ const allowApi=(req,res,next)=>{
  if(now-x.at>RATE_WINDOW){x.at=now;x.count=0}
  x.count++;rate.set(ip,x);
  if(x.count>RATE_LIMIT)return res.status(429).json({error:'Too many requests. Try again shortly.'});
- res.setHeader('Access-Control-Allow-Origin','https://streamvg.pages.dev');
+ setStreamVGCors(req,res);
  res.setHeader('Access-Control-Allow-Methods','GET,OPTIONS');
  res.setHeader('Access-Control-Allow-Headers','Range,Content-Type');
  next();
 };
 app.use('/api',express.json({limit:'16kb'}));
-app.options('/api/*splat',(req,res)=>{res.setHeader('Access-Control-Allow-Origin','https://streamvg.pages.dev');res.setHeader('Access-Control-Allow-Methods','GET,POST,OPTIONS');res.setHeader('Access-Control-Allow-Headers','Content-Type,Range,X-StreamVG-File-Name');res.sendStatus(204)});
+app.options('/api/*splat',(req,res)=>{setStreamVGCors(req,res);res.setHeader('Access-Control-Allow-Methods','GET,POST,OPTIONS');res.setHeader('Access-Control-Allow-Headers','Content-Type,Range,X-StreamVG-File-Name');res.sendStatus(204)});
 
-const remoteCors=(req,res)=>{res.setHeader('Access-Control-Allow-Origin','https://streamvg.pages.dev');res.setHeader('Access-Control-Allow-Methods','GET,POST,OPTIONS');res.setHeader('Access-Control-Allow-Headers','Content-Type');res.setHeader('Cache-Control','no-store')};
+const remoteCors=(req,res)=>{setStreamVGCors(req,res);res.setHeader('Access-Control-Allow-Methods','GET,POST,OPTIONS');res.setHeader('Access-Control-Allow-Headers','Content-Type');res.setHeader('Cache-Control','no-store')};
 app.post('/api/remote/create',(req,res)=>{remoteCors(req,res);if(remoteSessions.size>500)for(const[k,v]of remoteSessions)if(v.expires<Date.now())remoteSessions.delete(k);const code=randomUUID().replace(/-/g,'');remoteSessions.set(code,{expires:Date.now()+REMOTE_TTL,pendingUrl:'',createdAt:Date.now()});res.json({code,expiresIn:REMOTE_TTL/1000})});
 app.get('/api/remote/:code/poll',(req,res)=>{remoteCors(req,res);const item=remoteGet(req.params.code);if(!item)return res.status(410).json({error:'This TV connection has expired. Create a new QR code.'});const url=item.pendingUrl;item.pendingUrl='';res.json({url:url||null,expiresIn:Math.max(0,Math.floor((item.expires-Date.now())/1000))})});
 app.post('/api/remote/:code/play',(req,res)=>{remoteCors(req,res);const item=remoteGet(req.params.code);if(!item)return res.status(410).json({error:'This TV connection has expired. Scan a new QR code.'});const value=String(req.body?.url||'').trim();if(value.length>8192)return res.status(413).json({error:'The video URL is too long.'});try{const parsed=new URL(value);if(!['http:','https:'].includes(parsed.protocol))throw new Error()}catch{return res.status(400).json({error:'Please send a valid http or https video URL.'})}item.pendingUrl=value;res.json({ok:true})});
@@ -121,7 +121,7 @@ const localMediaCleanup=async token=>{
 };
 
 app.post('/api/local-session',async(req,res)=>{
- res.setHeader('Access-Control-Allow-Origin','https://streamvg.pages.dev');
+ setStreamVGCors(req,res);
  res.setHeader('Access-Control-Allow-Methods','POST,OPTIONS');
  res.setHeader('Access-Control-Allow-Headers','Content-Type');
  const declared=Number(req.headers['content-length']||0);
@@ -154,7 +154,7 @@ app.post('/api/local-session',async(req,res)=>{
 });
 
 app.get('/api/local-audio/:token',async(req,res)=>{
- res.setHeader('Access-Control-Allow-Origin','https://streamvg.pages.dev');
+ setStreamVGCors(req,res);
  res.setHeader('Access-Control-Allow-Methods','GET,OPTIONS');
  const item=localMediaStore.get(req.params.token);
  if(!item||item.expires<Date.now()){if(item)await localMediaCleanup(req.params.token);return res.status(410).json({error:'Local media session expired.'})}
