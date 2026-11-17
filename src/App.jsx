@@ -67,6 +67,7 @@ export default function App(){
    setCaptionTracks(subs.map((x,i)=>({i,label:x.title||x.language||('Subtitle '+(i+1)),lang:x.language||'',codec:x.codec_name||''})));
    setCaptionTrack(-1);
    setMkvStatus(audios.length+' audio track(s), '+subs.length+' subtitle track(s) found');
+   if(audios.length)changeAudio(0);
   }catch(e){console.warn('[StreamVG][remote-media] Track scan failed:',e?.message||e);setMkvStatus('Original playback is active. Remote track scan was not available.')}
  };
 
