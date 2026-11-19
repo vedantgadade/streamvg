@@ -434,3 +434,22 @@ footer,footer a,.info p,.info h3{
   background:#000!important;
   box-shadow:none!important;
 }
+
+
+/* Empty-player fix: Chromium paints an uninitialised <video> as charcoal.
+   Hide only the empty video surface so the black .videoWrap shows through.
+   Once a media src is assigned, the video becomes visible normally. */
+.videoWrap{
+  background:#000!important;
+  background-color:#000!important;
+  position:relative;
+}
+.videoWrap video:not([src]){
+  opacity:0!important;
+  background:transparent!important;
+  background-color:transparent!important;
+}
+.videoWrap:has(> video:not([src])){
+  background:#000!important;
+  background-color:#000!important;
+}
