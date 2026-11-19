@@ -181,3 +181,90 @@ html,body,:root{background:#000!important}
 .app:before,.hero:after{display:none!important}
 .heroGrid{background-image:none!important}
 .heroGrid span{display:none!important}
+
+
+/* Calm monochrome interface: keep the muted accent gradient only in hero text */
+:root{
+  --violet:#777b91;
+  --cyan:#9299a8;
+  --pink:#a0a0aa;
+  --ink:#000;
+}
+.hero h1{
+  background:linear-gradient(90deg,#d9dce4 0%,#aeb4c2 52%,#858d9d 100%)!important;
+  -webkit-background-clip:text!important;
+  background-clip:text!important;
+  color:transparent!important;
+  text-shadow:none!important;
+}
+.hero h1 em{
+  background:linear-gradient(90deg,#aeb4c2 0%,#969eae 55%,#7e8797 100%)!important;
+  -webkit-background-clip:text!important;
+  background-clip:text!important;
+  color:transparent!important;
+  text-shadow:none!important;
+}
+/* Neutral, dark buttons throughout; no purple/cyan/pink button gradients */
+button,.primary,.secondary,.icon,.mini,.quickLaunch button,.tools button,
+.controls button,.playerTopActions button,.bentoCard,.tabs button,
+.shareBox button,.resume button,.remoteCard button,.remoteModal button{
+  background:#171717!important;
+  color:#c4c7ce!important;
+  border:1px solid #303030!important;
+  box-shadow:none!important;
+}
+button:hover,.primary:hover,.secondary:hover,.quickLaunch button:hover,
+.tools button:hover,.controls button:hover,.playerTopActions button:hover{
+  background:#222!important;
+  color:#e0e2e7!important;
+  border-color:#454545!important;
+  box-shadow:none!important;
+  transform:none;
+}
+.primary,.shareBox button,.resume button,.codeActions button{
+  background:#242424!important;
+  color:#e0e2e7!important;
+  border-color:#424242!important;
+}
+.modeActive,.downloadBtn{
+  background:#292929!important;
+  color:#e0e2e7!important;
+  border-color:#484848!important;
+  box-shadow:none!important;
+}
+.brand>span{
+  background:#30343b!important;
+  box-shadow:none!important;
+}
+.headerPulse i,.nowDot,.eyebrow i{
+  background:#9b9b9b!important;
+  box-shadow:none!important;
+  animation:none!important;
+}
+.heroMeta,.hero p,.brand small,.panelHead span,.controls span,
+.toggle,.featureStrip span,.bentoIntro p,.bentoCard small{
+  color:#92959d!important;
+}
+.inputRow input,.panel select,.controls select,.shareBox input,
+.remoteCard form input{
+  background:#101010!important;
+  border-color:#303030!important;
+  color:#d0d2d7!important;
+}
+.inputRow input:focus{
+  border-color:#555!important;
+  box-shadow:0 0 0 2px rgba(255,255,255,.045)!important;
+}
+.playerCard,.panel,.bentoIntro,.bentoCard,.info{
+  background:#0b0b0b!important;
+  border-color:#242424!important;
+  box-shadow:none!important;
+}
+.controls,.playerTopbar,.tabs{
+  background:#101010!important;
+  border-color:#252525!important;
+}
+.featureStrip span{
+  background:#111!important;
+  border-color:#292929!important;
+}
