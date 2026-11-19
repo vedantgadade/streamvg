@@ -45,7 +45,7 @@ const compatGet=token=>{const item=compatibilitySessions.get(token);if(!item||it
 const waitForCompatPlaylist=async(job,timeoutMs=90000)=>{const until=Date.now()+timeoutMs;while(Date.now()<until){try{const info=await stat(path.join(job.dir,'index.m3u8'));if(info.size>0)return true}catch{}if(job.exitCode!==undefined)return false;await new Promise(resolve=>setTimeout(resolve,250))}return false};
 app.post('/api/compat/session',allowApi,async(req,res)=>{
  try{
-  const value=String(req.body?.url||'').trim();if(!value||value.length>8192)return res.status(400).json({error:'A valid video URL is required.'});
+  const value=String(req.body?.url||'').trim(),mode=req.body?.mode==='compatible'?'compatible':'original';if(!value||value.length>8192)return res.status(400).json({error:'A valid video URL is required.'});
   const target=new URL(value);if(!['http:','https:'].includes(target.protocol)||target.username||target.password||await blockedHost(target.hostname))return res.status(400).json({error:'This media URL is not allowed.'});
   const probe=await fetch(target,{headers:{Range:'bytes=0-0','user-agent':'Mozilla/5.0 StreamVG Media Probe'},redirect:'follow',signal:AbortSignal.timeout(15000)});
   const final=new URL(probe.url);const contentType=probe.headers.get('content-type')||'';await probe.body?.cancel().catch(()=>{});
@@ -53,7 +53,7 @@ app.post('/api/compat/session',allowApi,async(req,res)=>{
   if(!probe.ok||contentType.includes('text/html')||contentType.includes('application/json'))return res.status(422).json({error:'The media link is unavailable or expired.'});
   if(compatibilitySessions.size>40)for(const[token,item]of compatibilitySessions)if(item.expires<Date.now()){compatibilitySessions.delete(token);if(item.ff&&!item.ff.killed)item.ff.kill('SIGTERM');await rm(item.dir,{recursive:true,force:true}).catch(()=>{})}
   const token=randomUUID(),dir=path.join(COMPAT_DIR,token);await mkdir(dir,{recursive:true});
-  compatibilitySessions.set(token,{url:probe.url||target.href,dir,expires:Date.now()+COMPAT_TTL,ff:null,exitCode:undefined,stderr:''});
+  compatibilitySessions.set(token,{url:probe.url||target.href,dir,mode,expires:Date.now()+COMPAT_TTL,ff:null,exitCode:undefined,stderr:''});
   res.json({url:API_PUBLIC+'/api/compat/'+token+'/index.m3u8',expiresIn:COMPAT_TTL/1000});
  }catch(err){res.status(422).json({error:'Could not open this media link: '+String(err?.message||'upstream request failed').slice(0,180)})}
 });
@@ -61,10 +61,11 @@ app.get('/api/compat/:token/:file',allowApi,async(req,res)=>{
  const item=compatGet(req.params.token);if(!item)return res.status(410).send('Compatibility stream expired.');
  const file=req.params.file;if(!['index.m3u8','init.mp4'].includes(file)&&!/^segment-\d{6}\.m4s$/.test(file))return res.status(404).end();
  if(file==='index.m3u8'&&!item.ff){
-  const active=[...compatibilitySessions.values()].filter(x=>x.ff&&!x.exitCode).length;if(active>=2)return res.status(429).send('The compatibility encoder is busy. Retry shortly.');
+  const activeCompatible=[...compatibilitySessions.values()].filter(x=>x.mode==='compatible'&&x.ff&&x.exitCode===undefined).length;if(item.mode==='compatible'&&activeCompatible>=1)return res.status(429).send('The compatibility encoder is busy. Retry shortly.');
   const playlist=path.join(item.dir,'index.m3u8'),segmentPattern=path.join(item.dir,'segment-%06d.m4s');
-  // Remux only: keep the original codecs, resolution, HDR, bit depth and audio.
-  const ff=spawn('ffmpeg',['-hide_banner','-loglevel','warning','-rw_timeout','30000000','-i',item.url,'-map','0:v:0','-map','0:a:0?','-sn','-dn','-c','copy','-f','hls','-hls_segment_type','fmp4','-hls_fmp4_init_filename','init.mp4','-hls_time','6','-hls_list_size','0','-hls_flags','independent_segments+temp_file','-hls_segment_filename',segmentPattern,playlist],{stdio:['ignore','ignore','pipe']});
+  // Original mode remuxes without quality changes. Compatible mode is an explicit fallback for browsers that cannot decode the source codecs.
+  const codecArgs=item.mode==='compatible'?['-c:v','libx264','-preset','ultrafast','-crf','20','-pix_fmt','yuv420p','-c:a','aac','-b:a','256k','-ac','2']:['-c','copy'];
+  const ff=spawn('ffmpeg',['-hide_banner','-loglevel','warning','-rw_timeout','30000000','-i',item.url,'-map','0:v:0','-map','0:a:0?','-sn','-dn',...codecArgs,'-f','hls','-hls_segment_type','fmp4','-hls_fmp4_init_filename','init.mp4','-hls_time','6','-hls_list_size','0','-hls_flags','independent_segments+temp_file','-hls_segment_filename',segmentPattern,playlist],{stdio:['ignore','ignore','pipe']});
   item.ff=ff;ff.stderr.on('data',chunk=>{item.stderr=(item.stderr+chunk.toString()).slice(-6000)});ff.once('close',(code,signal)=>{item.exitCode=code??1;item.exitSignal=signal;if(code!==0)console.error(JSON.stringify({event:'compat-stream-failed',token:req.params.token,code,signal,stderr:item.stderr.slice(-2000)}))});ff.once('error',err=>{item.exitCode=1;item.stderr=String(err?.message||err)});
  }
  if(file==='index.m3u8'&&!await waitForCompatPlaylist(item))return res.status(503).setHeader('Retry-After','2').send(item.stderr||(item.exitSignal?'Source remux stopped ('+item.exitSignal+'). The source codec or container may not be supported.':'Could not create a source-quality stream from this link.'));
