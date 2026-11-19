@@ -142,8 +142,6 @@ app.get('/api/remote-subtitle/:token/:track',async(req,res)=>{
  }
 });
 
-const localMediaStore=new Map();
-
 const LOCAL_MEDIA_TTL=30*60*1000;
 const LOCAL_MEDIA_DIR='/tmp/streamvg-local';
 const LOCAL_MEDIA_MAX=8*1024*1024*1024;
