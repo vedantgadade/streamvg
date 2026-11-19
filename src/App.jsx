@@ -66,7 +66,7 @@ export default function App(){
    setAudioTrack(-1);
    setCaptionTracks(subs.map((x,i)=>({i,label:x.title||x.language||('Subtitle '+(i+1)),lang:x.language||'',codec:x.codec_name||''})));
    setCaptionTrack(-1);
-   setMkvStatus(audios.length+' audio track(s), '+subs.length+' subtitle track(s) found');
+   setMkvStatus(audios.length+' audio track(s), '+subs.length+' subtitle track(s) found');const firstAudioCodec=String(audios[0]?.codec_name||'').toLowerCase();const browserAudioCodecs=new Set(['aac','mp3','mp2','opus','vorbis','flac','alac','pcm_s16le','pcm_s24le','pcm_s32le']);if(audios.length&&!browserAudioCodecs.has(firstAudioCodec)){console.info('[StreamVG][audio] using AAC relay for unsupported source audio codec',firstAudioCodec);changeAudio(0)}
   }catch(e){console.warn('[StreamVG][remote-media] Track scan failed:',e?.message||e);setMkvStatus('Original playback is active. Remote track scan was not available.')}
  };
 
