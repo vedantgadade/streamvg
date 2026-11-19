@@ -268,3 +268,46 @@ button:hover,.primary:hover,.secondary:hover,.quickLaunch button:hover,
   background:#111!important;
   border-color:#292929!important;
 }
+
+
+/* Deep-black player workspace: remove remaining grey surface fills */
+.app,.playerCard,.playerCard *:not(video):not(canvas),
+.panel,.wide,.videoWrap,.videoWrap video,.controls,.playerTopbar,
+.stats div,.tabs,.tabs button,.historyItem,.wide pre,
+.shareBox input,.panel input,.panel select,.controls select,
+.remoteCard,.remoteModal,.featureStrip span,.bentoCard,.bentoIntro{
+  background-color:#000!important;
+}
+.playerCard,.panel,.wide,.stats div,.historyItem,.tabs,
+.controls,.playerTopbar,.shareBox input,.panel select,.controls select{
+  border-color:#191919!important;
+  box-shadow:none!important;
+}
+.playerCard{background:#000!important}
+.videoWrap,.videoWrap video{background:#000!important}
+.controls,.playerTopbar,.tabs{background:#000!important}
+.stats div{background:#000!important;border:1px solid #181818!important}
+.panel{background:#000!important}
+.panelHead,.panel h2,.stats b,.controls,.controls span,
+.tools button,.tabs button,.historyItem,.historyItem b{
+  color:#c2c2c2!important;
+}
+.tools button,.controls button,.tabs button,.shareBox button,
+.playerTopActions button,.panel button,.historyItem{
+  background:#050505!important;
+  border-color:#202020!important;
+  color:#c5c5c5!important;
+  box-shadow:none!important;
+}
+.tools button:hover,.controls button:hover,.tabs button:hover,
+.shareBox button:hover,.playerTopActions button:hover,.panel button:hover{
+  background:#101010!important;
+  border-color:#303030!important;
+  color:#eee!important;
+}
+input[type="range"],.seek,.toggle input{accent-color:#777!important}
+input,select,textarea{
+  background:#000!important;
+  color:#ccc!important;
+  border-color:#222!important;
+}
