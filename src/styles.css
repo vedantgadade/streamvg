@@ -359,3 +359,78 @@ input,select,textarea{
 footer,footer a,.info p,.info h3{
   color:#888!important;
 }
+
+
+/* Player viewing surface: true black, with softer low-contrast controls */
+.playerCard{
+  background:#000!important;
+  border-color:#171717!important;
+  box-shadow:none!important;
+}
+.playerTopbar{
+  background:#000!important;
+  border-bottom:1px solid #151515!important;
+  color:#777!important;
+}
+.playerTopbar b{color:#a0a0a0!important}
+.playerTopbar span{color:#707070!important}
+.videoWrap{
+  background:#000!important;
+  box-shadow:none!important;
+  border-radius:0!important;
+}
+.videoWrap video{
+  background:#000!important;
+  color-scheme:dark;
+}
+.videoWrap iframe{background:#000!important}
+.controls{
+  background:#050505!important;
+  border-top:1px solid #161616!important;
+  color:#929292!important;
+  box-shadow:none!important;
+}
+.controls button,.playerTopActions button{
+  background:#090909!important;
+  border:1px solid #202020!important;
+  color:#a0a0a0!important;
+  box-shadow:none!important;
+}
+.controls button:hover,.playerTopActions button:hover{
+  background:#111!important;
+  border-color:#303030!important;
+  color:#c0c0c0!important;
+  transform:none!important;
+}
+.controls span,.controls label,.playerTopbar,
+.playerTopbar b,.playerTopbar span{
+  color:#858585!important;
+}
+.controls select{
+  background:#080808!important;
+  color:#a0a0a0!important;
+  border:1px solid #242424!important;
+}
+.controls input[type="range"]{
+  accent-color:#777!important;
+}
+.videoWrap video::-webkit-media-controls-panel{
+  background-image:linear-gradient(transparent,rgba(0,0,0,.88))!important;
+}
+.videoWrap video::-webkit-media-controls-current-time-display,
+.videoWrap video::-webkit-media-controls-time-remaining-display{
+  color:#aaa!important;
+}
+.playerCard .nowDot{
+  background:#777!important;
+  box-shadow:none!important;
+}
+.playerCard.theater,.playerCard.cinemaMode{
+  background:#000!important;
+  border-color:#111!important;
+  box-shadow:none!important;
+}
+.playerCard.theater .videoWrap,.playerCard.cinemaMode .videoWrap{
+  background:#000!important;
+  box-shadow:none!important;
+}
