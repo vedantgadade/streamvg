@@ -200,7 +200,6 @@ app.post('/api/local-session/:token/finish',async(req,res)=>{
   const probe=JSON.parse(stdout||'{}'),streams=Array.isArray(probe.streams)?probe.streams:[];
   const audio=streams.filter(x=>x.codec_type==='audio').map((x,i)=>({i,index:x.index,codec:x.codec_name||'',language:x.tags?.language||x.tags?.language_ietf||'',title:x.tags?.title||x.tags?.handler_name||('Audio '+(i+1)),channels:x.channels||0,sampleRate:x.sample_rate||'',bitrate:x.bit_rate||''}));
   console.log(JSON.stringify({event:'local-media-upload-complete',token:req.params.token,size:item.received,audio}));
-  if(!audio.length){localUploadStore.delete(req.params.token);await unlink(item.path).catch(()=>{});return res.status(422).json({error:'No audio stream found in local media.',streams})}
   localUploadStore.delete(req.params.token);localMediaStore.set(req.params.token,{path:item.path,streams,expires:Date.now()+LOCAL_MEDIA_TTL});
   res.json({token:req.params.token,size:item.received,streams});
  }catch(err){localUploadStore.delete(req.params.token);await unlink(item.path).catch(()=>{});console.error(JSON.stringify({event:'local-media-session-error',token:req.params.token,error:String(err?.stack||err)}));res.status(422).json({error:'FFprobe could not read the uploaded movie: '+String(err?.message||err).slice(0,240)})}
