@@ -453,3 +453,26 @@ footer,footer a,.info p,.info h3{
   background:#000!important;
   background-color:#000!important;
 }
+
+
+/* Colorful StreamVG identity mark on the monochrome interface */
+.brand .brandIcon{
+  display:grid!important;
+  place-items:center!important;
+  width:54px!important;
+  height:54px!important;
+  padding:0!important;
+  flex:0 0 54px!important;
+  background:transparent!important;
+  border:0!important;
+  box-shadow:none!important;
+  overflow:visible!important;
+}
+.brand .brandIcon svg{
+  display:block!important;
+  width:100%!important;
+  height:100%!important;
+  filter:drop-shadow(0 0 7px rgba(53,108,255,.22))!important;
+}
+.brand .brandIcon svg rect{fill:#090b14!important}
+.brand .brandIcon svg path{stroke:url(#brandGrad)!important}
