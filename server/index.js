@@ -52,8 +52,10 @@ app.post('/api/compat/session',allowApi,async(req,res)=>{
   if(await blockedHost(final.hostname))return res.status(400).json({error:'Redirect target is not allowed.'});
   if(!probe.ok||contentType.includes('text/html')||contentType.includes('application/json'))return res.status(422).json({error:'The media link is unavailable or expired.'});
   if(compatibilitySessions.size>40)for(const[token,item]of compatibilitySessions)if(item.expires<Date.now()){compatibilitySessions.delete(token);if(item.ff&&!item.ff.killed)item.ff.kill('SIGTERM');await rm(item.dir,{recursive:true,force:true}).catch(()=>{})}
+  const sourceUrl=probe.url||target.href;
+  if(mode==='compatible')for(const item of compatibilitySessions.values())if(item.url===sourceUrl&&item.mode==='original'&&item.ff&&item.exitCode===undefined){const ff=item.ff;ff.kill('SIGTERM');await new Promise(resolve=>{if(item.exitCode!==undefined)return resolve();ff.once('close',resolve);setTimeout(resolve,1200).unref()})}
   const token=randomUUID(),dir=path.join(COMPAT_DIR,token);await mkdir(dir,{recursive:true});
-  compatibilitySessions.set(token,{url:probe.url||target.href,dir,mode,expires:Date.now()+COMPAT_TTL,ff:null,exitCode:undefined,stderr:''});
+  compatibilitySessions.set(token,{url:sourceUrl,dir,mode,expires:Date.now()+COMPAT_TTL,ff:null,exitCode:undefined,stderr:''});
   res.json({url:API_PUBLIC+'/api/compat/'+token+'/index.m3u8',expiresIn:COMPAT_TTL/1000});
  }catch(err){res.status(422).json({error:'Could not open this media link: '+String(err?.message||'upstream request failed').slice(0,180)})}
 });
@@ -64,8 +66,8 @@ app.get('/api/compat/:token/:file',allowApi,async(req,res)=>{
   const activeCompatible=[...compatibilitySessions.values()].filter(x=>x.mode==='compatible'&&x.ff&&x.exitCode===undefined).length;if(item.mode==='compatible'&&activeCompatible>=1)return res.status(429).send('The compatibility encoder is busy. Retry shortly.');
   const playlist=path.join(item.dir,'index.m3u8'),segmentPattern=path.join(item.dir,'segment-%06d.m4s');
   // Original mode remuxes without quality changes. Compatible mode is an explicit fallback for browsers that cannot decode the source codecs.
-  const codecArgs=item.mode==='compatible'?['-c:v','libx264','-preset','ultrafast','-crf','20','-pix_fmt','yuv420p','-c:a','aac','-b:a','256k','-ac','2']:['-c','copy'];
-  const ff=spawn('ffmpeg',['-hide_banner','-loglevel','warning','-rw_timeout','30000000','-i',item.url,'-map','0:v:0','-map','0:a:0?','-sn','-dn',...codecArgs,'-f','hls','-hls_segment_type','fmp4','-hls_fmp4_init_filename','init.mp4','-hls_time','6','-hls_list_size','0','-hls_flags','independent_segments+temp_file','-hls_segment_filename',segmentPattern,playlist],{stdio:['ignore','ignore','pipe']});
+  const codecArgs=item.mode==='compatible'?['-c:v','libx264','-preset','ultrafast','-crf','20','-pix_fmt','yuv420p','-threads:v','1','-c:a','aac','-b:a','256k','-ac','2']:['-c','copy'];
+  const ff=spawn('ffmpeg',['-hide_banner','-loglevel','warning','-filter_threads','1','-threads','1','-rw_timeout','30000000','-i',item.url,'-map','0:v:0','-map','0:a:0?','-sn','-dn',...codecArgs,'-f','hls','-hls_segment_type','fmp4','-hls_fmp4_init_filename','init.mp4','-hls_time','6','-hls_list_size','0','-hls_flags','independent_segments+temp_file','-hls_segment_filename',segmentPattern,playlist],{stdio:['ignore','ignore','pipe']});
   item.ff=ff;ff.stderr.on('data',chunk=>{item.stderr=(item.stderr+chunk.toString()).slice(-6000)});ff.once('close',(code,signal)=>{item.exitCode=code??1;item.exitSignal=signal;if(code!==0)console.error(JSON.stringify({event:'compat-stream-failed',token:req.params.token,code,signal,stderr:item.stderr.slice(-2000)}))});ff.once('error',err=>{item.exitCode=1;item.stderr=String(err?.message||err)});
  }
  if(file==='index.m3u8'&&!await waitForCompatPlaylist(item))return res.status(503).setHeader('Retry-After','2').send(item.stderr||(item.exitSignal?'Source remux stopped ('+item.exitSignal+'). The source codec or container may not be supported.':'Could not create a source-quality stream from this link.'));
