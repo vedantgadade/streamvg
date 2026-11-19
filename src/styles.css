@@ -311,3 +311,51 @@ input,select,textarea{
   color:#ccc!important;
   border-color:#222!important;
 }
+
+
+/* Final monochrome pass for feature cards, icon glows and remaining surfaces */
+.featureBento,.bentoIntro,.bentoCard,.bentoCard.glowCard,
+.featureStrip span,.info,footer,.quickLaunch button,
+.modeActive,.downloadBtn,.theater,.theatreAtmosphere,
+.ambientGlow,.cinemaMode,.cinemaMode .videoWrap,
+.cinemaMode .controls,.remoteOverlay,.remoteCard,.remoteModal{
+  background:#000!important;
+  background-image:none!important;
+  box-shadow:none!important;
+}
+.bentoCard:before,.bentoCard:after,.app:before,
+.ambientGlow,.theatreAtmosphere,.stageGlow{
+  display:none!important;
+  opacity:0!important;
+  background:none!important;
+  box-shadow:none!important;
+}
+.bentoCard:hover,.featureStrip span:hover,.quickLaunch button:hover{
+  background:#080808!important;
+  border-color:#292929!important;
+  box-shadow:none!important;
+  transform:none!important;
+}
+.bentoCard>svg,.bentoCard .cardArrow,.featureStrip svg,
+.featureStrip span,.quickLaunch svg,.modeActive,.downloadBtn{
+  color:#aaa!important;
+}
+.featureBento .bentoIntro,.featureBento .bentoCard,
+.featureStrip span,.info,.wide,footer{
+  border-color:#1c1c1c!important;
+}
+.playerCard,.videoWrap,.videoWrap video,.videoWrap canvas,
+.theater .videoWrap,.cinemaMode .videoWrap{
+  background:#000!important;
+  box-shadow:none!important;
+}
+.playerCard video{
+  background-color:#000!important;
+}
+.info,.about,.aboutBox{
+  background:#000!important;
+  color:#aaa!important;
+}
+footer,footer a,.info p,.info h3{
+  color:#888!important;
+}
