@@ -463,3 +463,5 @@ footer,footer a,.info p,.info h3{
 .streamErrorOverlay{position:absolute;z-index:8;inset:auto 5% 14%;display:grid;gap:8px;max-width:720px;margin:auto;padding:16px 20px;border:1px solid rgba(255,255,255,.16);border-radius:12px;background:rgba(10,13,20,.94);color:#f3f6fb;text-align:left;box-shadow:0 12px 42px rgba(0,0,0,.45)}.streamErrorOverlay b{font-size:14px}.streamErrorOverlay span{font-size:13px;line-height:1.5;color:#bac5d6}
 
 .streamErrorOverlay .compatibilityFallback{justify-self:start;margin-top:6px;padding:9px 13px;border:1px solid rgba(101,190,255,.5);border-radius:8px;background:#143250;color:#edf7ff;font-weight:650;cursor:pointer}.streamErrorOverlay .compatibilityFallback:disabled{opacity:.55;cursor:wait}
+
+.compatibilityNotice{position:absolute;z-index:7;top:12px;left:12px;right:12px;margin:0 auto;width:max-content;max-width:calc(100% - 24px);padding:8px 12px;border:1px solid rgba(101,190,255,.32);border-radius:8px;background:rgba(10,22,34,.88);color:#dceeff;font-size:12px;line-height:1.4;text-align:center;box-shadow:0 4px 18px rgba(0,0,0,.25)}
