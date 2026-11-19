@@ -173,3 +173,11 @@ header{height:82px;padding:0 max(18px,calc((100% - 1240px)/2));background:rgba(5
 
 .playerCard:fullscreen.controlsHidden .controls,.playerCard:fullscreen.controlsHidden .playerTopbar,.playerCard:fullscreen.controlsHidden .svFullscreenTools{opacity:0!important;visibility:hidden!important;pointer-events:none!important;transition:opacity .2s,visibility .2s}
 .playerCard:fullscreen .svFullscreenTools{transition:opacity .2s,visibility .2s}
+
+
+/* Pure black page background: preserve layout, components, and accent colours */
+html,body,:root{background:#000!important}
+.app{background:#000!important}
+.app:before,.hero:after{display:none!important}
+.heroGrid{background-image:none!important}
+.heroGrid span{display:none!important}
