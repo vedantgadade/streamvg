@@ -122,7 +122,7 @@ app.get('/api/remote-audio/:token',async(req,res)=>{
  ff.once('close',code=>{if(code!==0)console.error(JSON.stringify({event:'remote-audio-exit',track,code,stderr:stderr.slice(-1500)}))});
  res.status(200);res.setHeader('Content-Type','audio/mp4');res.setHeader('Cache-Control','no-store');res.setHeader('X-StreamVG-Audio-Track',String(track));
  ff.stdout.pipe(res);
- req.on('close',()=>{if(!res.writableEnded&&!ff.killed)ff.kill('SIGTERM')});
+ res.on('close',()=>{if(!res.writableEnded&&!ff.killed)ff.kill('SIGTERM')});
 });
 app.get('/api/remote-subtitle/:token/:track',async(req,res)=>{
  remoteCors(req,res);
@@ -206,7 +206,7 @@ app.get('/api/local-audio/:token',async(req,res)=>{
  res.setHeader('X-StreamVG-Audio-Codec',codec);
  res.setHeader('X-StreamVG-Audio-Track',String(track));
  ff.stdout.pipe(res);
- req.on('close',()=>{if(!res.writableEnded&&!ff.killed)ff.kill('SIGTERM')});
+ res.on('close',()=>{if(!res.writableEnded&&!ff.killed)ff.kill('SIGTERM')});
 });
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..','dist');
