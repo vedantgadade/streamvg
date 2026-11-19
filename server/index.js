@@ -7,7 +7,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
 import { mkdir, unlink, readFile, rm, stat } from 'node:fs/promises';
-import { createWriteStream } from 'node:fs';
+import { createReadStream, createWriteStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { spawn } from 'node:child_process';
 
@@ -59,15 +59,18 @@ app.post('/api/compat/session',allowApi,async(req,res)=>{
 });
 app.get('/api/compat/:token/:file',allowApi,async(req,res)=>{
  const item=compatGet(req.params.token);if(!item)return res.status(410).send('Compatibility stream expired.');
- const file=req.params.file;if(file!=='index.m3u8'&&!/^segment-\d{6}\.ts$/.test(file))return res.status(404).end();
+ const file=req.params.file;if(!['index.m3u8','init.mp4'].includes(file)&&!/^segment-\d{6}\.m4s$/.test(file))return res.status(404).end();
  if(file==='index.m3u8'&&!item.ff){
   const active=[...compatibilitySessions.values()].filter(x=>x.ff&&!x.exitCode).length;if(active>=2)return res.status(429).send('The compatibility encoder is busy. Retry shortly.');
-  const playlist=path.join(item.dir,'index.m3u8'),segmentPattern=path.join(item.dir,'segment-%06d.ts');
-  const ff=spawn('ffmpeg',['-hide_banner','-loglevel','warning','-rw_timeout','30000000','-i',item.url,'-map','0:v:0','-map','0:a:0?','-sn','-dn','-c:v','libx264','-preset','ultrafast','-crf','24','-pix_fmt','yuv420p','-c:a','aac','-b:a','192k','-ac','2','-f','hls','-hls_time','6','-hls_list_size','0','-hls_flags','independent_segments+temp_file','-hls_segment_filename',segmentPattern,playlist],{stdio:['ignore','ignore','pipe']});
-  item.ff=ff;ff.stderr.on('data',chunk=>{item.stderr=(item.stderr+chunk.toString()).slice(-6000)});ff.once('close',code=>{item.exitCode=code;if(code!==0)console.error(JSON.stringify({event:'compat-transcode-failed',token:req.params.token,code,stderr:item.stderr.slice(-2000)}))});ff.once('error',err=>{item.exitCode=1;item.stderr=String(err?.message||err)});
+  const playlist=path.join(item.dir,'index.m3u8'),segmentPattern=path.join(item.dir,'segment-%06d.m4s');
+  // Remux only: keep the original codecs, resolution, HDR, bit depth and audio.
+  const ff=spawn('ffmpeg',['-hide_banner','-loglevel','warning','-rw_timeout','30000000','-i',item.url,'-map','0:v:0','-map','0:a:0?','-sn','-dn','-c','copy','-f','hls','-hls_segment_type','fmp4','-hls_fmp4_init_filename','init.mp4','-hls_time','6','-hls_list_size','0','-hls_flags','independent_segments+temp_file','-hls_segment_filename',segmentPattern,playlist],{stdio:['ignore','ignore','pipe']});
+  item.ff=ff;ff.stderr.on('data',chunk=>{item.stderr=(item.stderr+chunk.toString()).slice(-6000)});ff.once('close',(code,signal)=>{item.exitCode=code??1;item.exitSignal=signal;if(code!==0)console.error(JSON.stringify({event:'compat-stream-failed',token:req.params.token,code,signal,stderr:item.stderr.slice(-2000)}))});ff.once('error',err=>{item.exitCode=1;item.stderr=String(err?.message||err)});
  }
- if(file==='index.m3u8'&&!await waitForCompatPlaylist(item))return res.status(503).setHeader('Retry-After','2').send(item.stderr||'Transcoder is preparing the first video segment. Retry shortly.');
- try{const data=await readFile(path.join(item.dir,file));res.setHeader('Access-Control-Allow-Origin','https://streamvg.pages.dev');res.setHeader('Cache-Control','no-store');res.setHeader('Content-Type',file.endsWith('.m3u8')?'application/vnd.apple.mpegurl':'video/mp2t');res.send(data)}catch{return res.status(404).end()}
+ if(file==='index.m3u8'&&!await waitForCompatPlaylist(item))return res.status(503).setHeader('Retry-After','2').send(item.stderr||(item.exitSignal?'Source remux stopped ('+item.exitSignal+'). The source codec or container may not be supported.':'Could not create a source-quality stream from this link.'));
+ const filePath=path.join(item.dir,file);try{await stat(filePath)}catch{return res.status(404).end()}
+ res.setHeader('Access-Control-Allow-Origin','https://streamvg.pages.dev');res.setHeader('Cache-Control','no-store');res.setHeader('Content-Type',file==='index.m3u8'?'application/vnd.apple.mpegurl':file==='init.mp4'?'video/mp4':'video/iso.segment');
+ createReadStream(filePath).on('error',()=>{if(!res.headersSent)res.status(404).end();else res.destroy()}).pipe(res);
 });
 app.post('/api/remote/create',(req,res)=>{remoteCors(req,res);if(remoteSessions.size>500)for(const[k,v]of remoteSessions)if(v.expires<Date.now())remoteSessions.delete(k);const code=randomUUID().replace(/-/g,'');remoteSessions.set(code,{expires:Date.now()+REMOTE_TTL,pendingUrl:'',createdAt:Date.now()});res.json({code,expiresIn:REMOTE_TTL/1000})});
 app.get('/api/remote/:code/poll',(req,res)=>{remoteCors(req,res);const item=remoteGet(req.params.code);if(!item)return res.status(410).json({error:'This TV connection has expired. Create a new QR code.'});const url=item.pendingUrl;item.pendingUrl='';res.json({url:url||null,expiresIn:Math.max(0,Math.floor((item.expires-Date.now())/1000))})});
