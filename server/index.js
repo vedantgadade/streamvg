@@ -6,7 +6,7 @@ import { lookup } from 'node:dns/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
-import { mkdir, unlink } from 'node:fs/promises';
+import { mkdir, unlink, readFile, rm, stat } from 'node:fs/promises';
 import { createWriteStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { spawn } from 'node:child_process';
@@ -16,6 +16,7 @@ const app=express();
 const rate=new Map();
 const relayStore=new Map();
 const remoteSessions=new Map();
+const compatibilitySessions=new Map();
 const REMOTE_TTL=15*60*1000;
 const remoteGet=code=>{const item=remoteSessions.get(code);if(!item||item.expires<Date.now()){remoteSessions.delete(code);return null}return item};
 const relay=(url,headers={})=>{const token=randomUUID();relayStore.set(token,{url,headers,expires:Date.now()+10*60*1000});return token};
@@ -30,7 +31,7 @@ const allowApi=(req,res,next)=>{
  x.count++;rate.set(ip,x);
  if(x.count>RATE_LIMIT)return res.status(429).json({error:'Too many requests. Try again shortly.'});
  res.setHeader('Access-Control-Allow-Origin','https://streamvg.pages.dev');
- res.setHeader('Access-Control-Allow-Methods','GET,OPTIONS');
+ res.setHeader('Access-Control-Allow-Methods','GET,POST,OPTIONS');
  res.setHeader('Access-Control-Allow-Headers','Range,Content-Type');
  next();
 };
@@ -38,6 +39,36 @@ app.use('/api',express.json({limit:'16kb'}));
 app.options('/api/*splat',(req,res)=>{res.setHeader('Access-Control-Allow-Origin','https://streamvg.pages.dev');res.setHeader('Access-Control-Allow-Methods','GET,POST,OPTIONS');res.setHeader('Access-Control-Allow-Headers','Content-Type,Range,X-StreamVG-File-Name');res.sendStatus(204)});
 
 const remoteCors=(req,res)=>{res.setHeader('Access-Control-Allow-Origin','https://streamvg.pages.dev');res.setHeader('Access-Control-Allow-Methods','GET,POST,OPTIONS');res.setHeader('Access-Control-Allow-Headers','Content-Type');res.setHeader('Cache-Control','no-store')};
+const COMPAT_DIR='/tmp/streamvg-compat';
+const COMPAT_TTL=60*60*1000;
+const compatGet=token=>{const item=compatibilitySessions.get(token);if(!item||item.expires<Date.now())return null;return item};
+const waitForCompatPlaylist=async(job,timeoutMs=90000)=>{const until=Date.now()+timeoutMs;while(Date.now()<until){try{const info=await stat(path.join(job.dir,'index.m3u8'));if(info.size>0)return true}catch{}if(job.exitCode!==undefined)return false;await new Promise(resolve=>setTimeout(resolve,250))}return false};
+app.post('/api/compat/session',allowApi,async(req,res)=>{
+ try{
+  const value=String(req.body?.url||'').trim();if(!value||value.length>8192)return res.status(400).json({error:'A valid video URL is required.'});
+  const target=new URL(value);if(!['http:','https:'].includes(target.protocol)||target.username||target.password||await blockedHost(target.hostname))return res.status(400).json({error:'This media URL is not allowed.'});
+  const probe=await fetch(target,{headers:{Range:'bytes=0-0','user-agent':'Mozilla/5.0 StreamVG Media Probe'},redirect:'follow',signal:AbortSignal.timeout(15000)});
+  const final=new URL(probe.url);const contentType=probe.headers.get('content-type')||'';await probe.body?.cancel().catch(()=>{});
+  if(await blockedHost(final.hostname))return res.status(400).json({error:'Redirect target is not allowed.'});
+  if(!probe.ok||contentType.includes('text/html')||contentType.includes('application/json'))return res.status(422).json({error:'The media link is unavailable or expired.'});
+  if(compatibilitySessions.size>40)for(const[token,item]of compatibilitySessions)if(item.expires<Date.now()){compatibilitySessions.delete(token);if(item.ff&&!item.ff.killed)item.ff.kill('SIGTERM');await rm(item.dir,{recursive:true,force:true}).catch(()=>{})}
+  const token=randomUUID(),dir=path.join(COMPAT_DIR,token);await mkdir(dir,{recursive:true});
+  compatibilitySessions.set(token,{url:probe.url||target.href,dir,expires:Date.now()+COMPAT_TTL,ff:null,exitCode:undefined,stderr:''});
+  res.json({url:API_PUBLIC+'/api/compat/'+token+'/index.m3u8',expiresIn:COMPAT_TTL/1000});
+ }catch(err){res.status(422).json({error:'Could not open this media link: '+String(err?.message||'upstream request failed').slice(0,180)})}
+});
+app.get('/api/compat/:token/:file',allowApi,async(req,res)=>{
+ const item=compatGet(req.params.token);if(!item)return res.status(410).send('Compatibility stream expired.');
+ const file=req.params.file;if(file!=='index.m3u8'&&!/^segment-\d{6}\.ts$/.test(file))return res.status(404).end();
+ if(file==='index.m3u8'&&!item.ff){
+  const active=[...compatibilitySessions.values()].filter(x=>x.ff&&!x.exitCode).length;if(active>=2)return res.status(429).send('The compatibility encoder is busy. Retry shortly.');
+  const playlist=path.join(item.dir,'index.m3u8'),segmentPattern=path.join(item.dir,'segment-%06d.ts');
+  const ff=spawn('ffmpeg',['-hide_banner','-loglevel','warning','-rw_timeout','30000000','-i',item.url,'-map','0:v:0','-map','0:a:0?','-sn','-dn','-c:v','libx264','-preset','ultrafast','-crf','24','-pix_fmt','yuv420p','-c:a','aac','-b:a','192k','-ac','2','-f','hls','-hls_time','6','-hls_list_size','0','-hls_flags','independent_segments+temp_file','-hls_segment_filename',segmentPattern,playlist],{stdio:['ignore','ignore','pipe']});
+  item.ff=ff;ff.stderr.on('data',chunk=>{item.stderr=(item.stderr+chunk.toString()).slice(-6000)});ff.once('close',code=>{item.exitCode=code;if(code!==0)console.error(JSON.stringify({event:'compat-transcode-failed',token:req.params.token,code,stderr:item.stderr.slice(-2000)}))});ff.once('error',err=>{item.exitCode=1;item.stderr=String(err?.message||err)});
+ }
+ if(file==='index.m3u8'&&!await waitForCompatPlaylist(item))return res.status(503).setHeader('Retry-After','2').send(item.stderr||'Transcoder is preparing the first video segment. Retry shortly.');
+ try{const data=await readFile(path.join(item.dir,file));res.setHeader('Access-Control-Allow-Origin','https://streamvg.pages.dev');res.setHeader('Cache-Control','no-store');res.setHeader('Content-Type',file.endsWith('.m3u8')?'application/vnd.apple.mpegurl':'video/mp2t');res.send(data)}catch{return res.status(404).end()}
+});
 app.post('/api/remote/create',(req,res)=>{remoteCors(req,res);if(remoteSessions.size>500)for(const[k,v]of remoteSessions)if(v.expires<Date.now())remoteSessions.delete(k);const code=randomUUID().replace(/-/g,'');remoteSessions.set(code,{expires:Date.now()+REMOTE_TTL,pendingUrl:'',createdAt:Date.now()});res.json({code,expiresIn:REMOTE_TTL/1000})});
 app.get('/api/remote/:code/poll',(req,res)=>{remoteCors(req,res);const item=remoteGet(req.params.code);if(!item)return res.status(410).json({error:'This TV connection has expired. Create a new QR code.'});const url=item.pendingUrl;item.pendingUrl='';res.json({url:url||null,expiresIn:Math.max(0,Math.floor((item.expires-Date.now())/1000))})});
 app.post('/api/remote/:code/play',(req,res)=>{remoteCors(req,res);const item=remoteGet(req.params.code);if(!item)return res.status(410).json({error:'This TV connection has expired. Scan a new QR code.'});const value=String(req.body?.url||'').trim();if(value.length>8192)return res.status(413).json({error:'The video URL is too long.'});try{const parsed=new URL(value);if(!['http:','https:'].includes(parsed.protocol))throw new Error()}catch{return res.status(400).json({error:'Please send a valid http or https video URL.'})}item.pendingUrl=value;res.json({ok:true})});
@@ -57,7 +88,7 @@ const localMediaCleanup=async token=>{
 app.post('/api/local-session',async(req,res)=>{
  res.setHeader('Access-Control-Allow-Origin','https://streamvg.pages.dev');
  res.setHeader('Access-Control-Allow-Methods','POST,OPTIONS');
- res.setHeader('Access-Control-Allow-Headers','Content-Type');
+ res.setHeader('Access-Control-Allow-Headers','Content-Type,X-StreamVG-File-Name');
  const declared=Number(req.headers['content-length']||0);
  if(declared>LOCAL_MEDIA_MAX)return res.status(413).json({error:'Local file is too large for the server media engine.'});
  const token=randomUUID(),filePath=path.join(LOCAL_MEDIA_DIR,token+'.media');
@@ -76,7 +107,6 @@ app.post('/api/local-session',async(req,res)=>{
   const streams=Array.isArray(probe.streams)?probe.streams:[];
   const audio=streams.filter(x=>x.codec_type==='audio').map((x,i)=>({i,index:x.index,codec:x.codec_name||'',codecLong:x.codec_long_name||'',language:x.tags?.language||x.tags?.language_ietf||'',title:x.tags?.title||x.tags?.handler_name||('Audio '+(i+1)),channels:x.channels||0,sampleRate:x.sample_rate||'',bitrate:x.bit_rate||''}));
   console.log(JSON.stringify({event:'local-media-audio-codecs',token,size:bytes,audio}));
-  if(!audio.length){await unlink(filePath).catch(()=>{});return res.status(422).json({error:'No audio stream found in local media.',streams})}
   localMediaStore.set(token,{path:filePath,streams,expires:Date.now()+LOCAL_MEDIA_TTL});
   res.json({token,size:bytes,streams});
  }catch(err){
@@ -285,6 +315,7 @@ const extractMedia=(html,base)=>{
 
 setInterval(()=>{const now=Date.now();for(const[token,item]of localMediaStore)if(item.expires<now)localMediaCleanup(token)},60000).unref();
 setInterval(()=>{const now=Date.now();for(const[k,v]of rate)if(now-v.at>RATE_WINDOW*2)rate.delete(k)},RATE_WINDOW*2).unref();
-const API_PUBLIC=(process.env.PUBLIC_API_URL||'https://streamvg-web-production.up.railway.app').replace(/\/$/,'');
+const API_PUBLIC=(process.env.PUBLIC_API_URL||'https://streamvg-web-production-22879f12.up.railway.app').replace(/\/$/,'');
 setInterval(()=>{const now=Date.now();for(const[k,v]of relayStore)if(v.expires<now)relayStore.delete(k)},60000).unref();
+setInterval(()=>{const now=Date.now();for(const[token,item]of compatibilitySessions)if(item.expires<now){compatibilitySessions.delete(token);if(item.ff&&!item.ff.killed)item.ff.kill('SIGTERM');rm(item.dir,{recursive:true,force:true}).catch(()=>{})}},60000).unref();
 const port=process.env.PORT||3000;createServer(app).listen(port,()=>console.log('StreamVG listening on '+port));
