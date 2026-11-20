@@ -17,6 +17,7 @@ header{height:78px;background:rgba(6,7,13,.72);backdrop-filter:blur(18px);border
 .videoWrap{position:relative;z-index:2;background:#000;border-radius:17px 17px 0 0}
 .ambientGlow{position:absolute;z-index:1;inset:3% 5% 24%;filter:blur(55px);opacity:0;transform:scale(1.06);background:radial-gradient(circle at 30% 35%,#725cff,transparent 38%),radial-gradient(circle at 75% 55%,#19d9ff,transparent 40%);transition:opacity .35s ease}
 .ambientOn .ambientGlow{opacity:.58}
+.ambientOn[data-ambient="live"] .ambientGlow{background:radial-gradient(circle at 30% 35%,rgba(var(--ambient,114,92,255),.9),transparent 42%),radial-gradient(circle at 75% 55%,rgba(var(--ambient,25,217,255),.7),transparent 44%);transition:opacity .35s ease,background 1s linear}
 .ambientOn .videoWrap{box-shadow:0 0 80px rgba(94,231,255,.12)}
 .controls{position:relative;z-index:3;background:linear-gradient(180deg,#141824,#0d1018);border-top:1px solid rgba(255,255,255,.07);padding:12px}
 .controls button{background:#1a2030;border:1px solid #2b3448;transition:.18s}.controls button:hover{transform:translateY(-1px);border-color:#655cff}
