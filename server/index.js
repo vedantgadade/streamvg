@@ -20,30 +20,130 @@ const REMOTE_TTL=15*60*1000;
 const remoteGet=code=>{const item=remoteSessions.get(code);if(!item||item.expires<Date.now()){remoteSessions.delete(code);return null}return item};
 const relay=(url,headers={})=>{const token=randomUUID();relayStore.set(token,{url,headers,expires:Date.now()+10*60*1000});return token};
 const relayGet=token=>{const x=relayStore.get(token);if(!x||x.expires<Date.now()){relayStore.delete(token);return null}return x};
+const API_PUBLIC=(process.env.PUBLIC_API_URL||'https://streamvg-web-production-22879f12.up.railway.app').replace(/\/$/,'');
+const remoteInputHeaders=headers=>{
+ const allowed=new Set(['user-agent','referer','origin','cookie','authorization','accept','accept-language']);
+ return Object.entries(headers||{}).filter(([k,v])=>allowed.has(k.toLowerCase())&&v!=null&&String(v).length<8192)
+  .map(([k,v])=>k+': '+String(v)).join('\r\n')+'\r\n';
+};
+const resolveRemoteInput=async target=>{
+ const u=new URL(target),api=new URL(API_PUBLIC);
+ if(u.origin===api.origin&&u.pathname.startsWith('/api/stream/')){
+  const token=u.pathname.split('/').filter(Boolean).at(-1),relayItem=relayGet(token);
+  if(!relayItem)throw new Error('The relayed source session expired. Reload the movie.');
+  const source=new URL(relayItem.url);
+  if(!['http:','https:'].includes(source.protocol)||source.username||source.password||await blockedHost(source.hostname))throw new Error('The original media source is not allowed.');
+  return {url:source.href,headers:relayItem.headers||{}};
+ }
+ if(u.origin===api.origin&&u.pathname==='/api/proxy'&&u.searchParams.has('url')){
+  const source=new URL(u.searchParams.get('url'));
+  if(!['http:','https:'].includes(source.protocol)||source.username||source.password||await blockedHost(source.hostname))throw new Error('The original media source is not allowed.');
+  return {url:source.href,headers:{}};
+ }
+ if(!['http:','https:'].includes(u.protocol)||u.username||u.password||await blockedHost(u.hostname))throw new Error('This media URL is not allowed.');
+ return {url:u.href,headers:{}};
+};
 const RATE_WINDOW=60000;
 const RATE_LIMIT=300;
 const clientIp=req=>(req.headers['x-forwarded-for']||req.socket.remoteAddress||'unknown').toString().split(',')[0].trim();
+
+// Allow the production Pages site and its own Cloudflare Pages preview subdomains.
+// Never use Access-Control-Allow-Origin: * for the media/session endpoints.
+const setStreamVGCors=(req,res,methods='GET,OPTIONS',headers='Range,Content-Type')=>{
+ const origin=String(req.headers.origin||'');
+ let allowed=false;
+ try{
+  const u=new URL(origin);
+  allowed=u.protocol==='https:'&&(u.hostname==='streamvg.pages.dev'||u.hostname.endsWith('.streamvg.pages.dev'));
+ }catch{}
+ res.vary('Origin');
+ if(allowed)res.setHeader('Access-Control-Allow-Origin',origin);
+ res.setHeader('Access-Control-Allow-Methods',methods);
+ res.setHeader('Access-Control-Allow-Headers',headers);
+ res.setHeader('Access-Control-Max-Age','86400');
+};
 
 const allowApi=(req,res,next)=>{
  const now=Date.now(),ip=clientIp(req),x=rate.get(ip)||{at:now,count:0};
  if(now-x.at>RATE_WINDOW){x.at=now;x.count=0}
  x.count++;rate.set(ip,x);
  if(x.count>RATE_LIMIT)return res.status(429).json({error:'Too many requests. Try again shortly.'});
- res.setHeader('Access-Control-Allow-Origin','https://streamvg.pages.dev');
- res.setHeader('Access-Control-Allow-Methods','GET,OPTIONS');
- res.setHeader('Access-Control-Allow-Headers','Range,Content-Type');
+ setStreamVGCors(req,res,'GET,OPTIONS','Range,Content-Type');
  next();
 };
 app.use('/api',express.json({limit:'16kb'}));
-app.options('/api/*splat',(req,res)=>{res.setHeader('Access-Control-Allow-Origin','https://streamvg.pages.dev');res.setHeader('Access-Control-Allow-Methods','GET,POST,OPTIONS');res.setHeader('Access-Control-Allow-Headers','Content-Type,Range,X-StreamVG-File-Name');res.sendStatus(204)});
+app.options('/api/*splat',(req,res)=>{setStreamVGCors(req,res,'GET,POST,OPTIONS','Content-Type,Range,X-StreamVG-File-Name');res.sendStatus(204)});
 
-const remoteCors=(req,res)=>{res.setHeader('Access-Control-Allow-Origin','https://streamvg.pages.dev');res.setHeader('Access-Control-Allow-Methods','GET,POST,OPTIONS');res.setHeader('Access-Control-Allow-Headers','Content-Type');res.setHeader('Cache-Control','no-store')};
+const remoteCors=(req,res)=>{setStreamVGCors(req,res,'GET,POST,OPTIONS','Content-Type');res.setHeader('Cache-Control','no-store')};
 app.post('/api/remote/create',(req,res)=>{remoteCors(req,res);if(remoteSessions.size>500)for(const[k,v]of remoteSessions)if(v.expires<Date.now())remoteSessions.delete(k);const code=randomUUID().replace(/-/g,'');remoteSessions.set(code,{expires:Date.now()+REMOTE_TTL,pendingUrl:'',createdAt:Date.now()});res.json({code,expiresIn:REMOTE_TTL/1000})});
 app.get('/api/remote/:code/poll',(req,res)=>{remoteCors(req,res);const item=remoteGet(req.params.code);if(!item)return res.status(410).json({error:'This TV connection has expired. Create a new QR code.'});const url=item.pendingUrl;item.pendingUrl='';res.json({url:url||null,expiresIn:Math.max(0,Math.floor((item.expires-Date.now())/1000))})});
 app.post('/api/remote/:code/play',(req,res)=>{remoteCors(req,res);const item=remoteGet(req.params.code);if(!item)return res.status(410).json({error:'This TV connection has expired. Scan a new QR code.'});const value=String(req.body?.url||'').trim();if(value.length>8192)return res.status(413).json({error:'The video URL is too long.'});try{const parsed=new URL(value);if(!['http:','https:'].includes(parsed.protocol))throw new Error()}catch{return res.status(400).json({error:'Please send a valid http or https video URL.'})}item.pendingUrl=value;res.json({ok:true})});
 
+
+const remoteMediaStore=new Map();
+const REMOTE_MEDIA_TTL=30*60*1000;
+const remoteMediaGet=token=>{const item=remoteMediaStore.get(token);if(!item||item.expires<Date.now()){remoteMediaStore.delete(token);return null}item.expires=Date.now()+REMOTE_MEDIA_TTL;return item};
+const inspectRemoteMedia=async target=>{
+ const u=new URL(target);
+ if(!['http:','https:'].includes(u.protocol)||u.username||u.password||await blockedHost(u.hostname))throw new Error('This media URL is not allowed.');
+ const{stdout}=await execFileAsync('ffprobe',['-v','error','-rw_timeout','30000000','-probesize','100M','-analyzeduration','100M','-show_streams','-show_format','-of','json',target],{timeout:90000,maxBuffer:20*1024*1024});
+ const data=JSON.parse(stdout||'{}');
+ return Array.isArray(data.streams)?data.streams:[];
+};
+app.post('/api/remote-media-session',async(req,res)=>{
+ remoteCors(req,res);
+ try{
+  const target=String(req.body?.url||'').trim();
+  if(!target||target.length>8192)return res.status(400).json({error:'A valid media URL is required.'});
+  const streams=await inspectRemoteMedia(target);
+  if(!streams.some(x=>x.codec_type==='audio')&&!streams.some(x=>x.codec_type==='subtitle'))return res.status(422).json({error:'No audio or subtitle tracks were found.'});
+  const token=randomUUID();
+  remoteMediaStore.set(token,{url:target,streams,expires:Date.now()+REMOTE_MEDIA_TTL});
+  const publicStreams=streams.filter(x=>x.codec_type==='audio'||x.codec_type==='subtitle').map(x=>({index:x.index,codec_type:x.codec_type,codec_name:x.codec_name||'',language:x.tags?.language||x.tags?.language_ietf||'',title:x.tags?.title||x.tags?.handler_name||'',channels:x.channels||0,channel_layout:x.channel_layout||'',sample_rate:x.sample_rate||''}));
+  res.json({token,expiresIn:REMOTE_MEDIA_TTL/1000,streams:publicStreams});
+ }catch(err){
+  const message=String(err?.message||'Could not inspect this media URL');
+  console.error(JSON.stringify({event:'remote-media-probe-error',message:message.slice(0,240)}));
+  res.status(422).json({error:message.includes('not allowed')?message:'Could not read tracks from this URL. The link may have expired or the server may not support this source.'});
+ }
+});
+app.get('/api/remote-audio/:token',async(req,res)=>{
+ remoteCors(req,res);
+ const item=remoteMediaGet(req.params.token);
+ if(!item)return res.status(410).json({error:'Remote media session expired. Load the video again.'});
+ const track=Number(req.query.track??-1);
+ const audio=item.streams.filter(x=>x.codec_type==='audio');
+ if(!Number.isInteger(track)||track<0||track>=audio.length)return res.status(400).json({error:'Invalid audio track.'});
+ const stream=audio[track];
+ const ff=spawn('ffmpeg',['-hide_banner','-loglevel','error','-rw_timeout','20000000','-i',item.url,'-map','0:'+String(stream.index),'-vn','-sn','-dn','-c:a','aac','-b:a','192k','-movflags','+frag_keyframe+empty_moov+default_base_moof','-f','mp4','pipe:1'],{stdio:['ignore','pipe','pipe']});
+ let stderr='';
+ ff.stderr.on('data',chunk=>{stderr+=chunk.toString();if(stderr.length>8000)stderr=stderr.slice(-8000)});
+ ff.once('error',err=>{console.error(JSON.stringify({event:'remote-audio-error',track,error:String(err?.message||err)}));if(!res.headersSent)res.status(502).end('Audio extraction failed');else res.destroy(err)});
+ ff.once('close',code=>{if(code!==0)console.error(JSON.stringify({event:'remote-audio-exit',track,code,stderr:stderr.slice(-1500)}))});
+ res.status(200);res.setHeader('Content-Type','audio/mp4');res.setHeader('Cache-Control','no-store');res.setHeader('X-StreamVG-Audio-Track',String(track));
+ ff.stdout.pipe(res);
+ req.on('close',()=>{if(!res.writableEnded&&!ff.killed)ff.kill('SIGTERM')});
+});
+app.get('/api/remote-subtitle/:token/:track',async(req,res)=>{
+ remoteCors(req,res);
+ const item=remoteMediaGet(req.params.token);
+ if(!item)return res.status(410).send('Remote media session expired.');
+ const track=Number(req.params.track),subs=item.streams.filter(x=>x.codec_type==='subtitle');
+ if(!Number.isInteger(track)||track<0||track>=subs.length)return res.status(400).send('Invalid subtitle track.');
+ const stream=subs[track],codec=String(stream.codec_name||'').toLowerCase();
+ const textCodecs=new Set(['subrip','ass','ssa','mov_text','webvtt','text','ttml','srt']);
+ if(!textCodecs.has(codec))return res.status(415).send('This subtitle is image-based and cannot be shown as text.');
+ try{
+  const{stdout}=await execFileAsync('ffmpeg',['-hide_banner','-loglevel','error','-rw_timeout','20000000','-i',item.url,'-map','0:'+String(stream.index),'-c:s','webvtt','-f','webvtt','pipe:1'],{timeout:120000,maxBuffer:12*1024*1024,encoding:'buffer'});
+  res.status(200);res.setHeader('Content-Type','text/vtt; charset=utf-8');res.setHeader('Cache-Control','no-store');res.send(stdout);
+ }catch(err){
+  console.error(JSON.stringify({event:'remote-subtitle-error',track,codec,error:String(err?.message||err).slice(0,1200)}));
+  res.status(422).send('Could not convert this subtitle track.');
+ }
+});
+
 const localMediaStore=new Map();
-const LOCAL_MEDIA_TTL=30*60*1000;
+const LOCAL_MEDIA_TTL=8*60*60*1000;
 const LOCAL_MEDIA_DIR='/tmp/streamvg-local';
 const LOCAL_MEDIA_MAX=8*1024*1024*1024;
 
@@ -92,6 +192,7 @@ app.get('/api/local-audio/:token',async(req,res)=>{
  res.setHeader('Access-Control-Allow-Methods','GET,OPTIONS');
  const item=localMediaStore.get(req.params.token);
  if(!item||item.expires<Date.now()){if(item)await localMediaCleanup(req.params.token);return res.status(410).json({error:'Local media session expired.'})}
+ item.expires=Date.now()+LOCAL_MEDIA_TTL;
  const track=Number(req.query.track??0);
  const audio=item.streams.filter(x=>x.codec_type==='audio');
  if(!Number.isInteger(track)||track<0||track>=audio.length)return res.status(400).json({error:'Invalid audio track.'});
@@ -284,7 +385,7 @@ const extractMedia=(html,base)=>{
 };
 
 setInterval(()=>{const now=Date.now();for(const[token,item]of localMediaStore)if(item.expires<now)localMediaCleanup(token)},60000).unref();
+setInterval(()=>{const now=Date.now();for(const[token,item]of remoteMediaStore)if(item.expires<now)remoteMediaStore.delete(token)},60000).unref();
 setInterval(()=>{const now=Date.now();for(const[k,v]of rate)if(now-v.at>RATE_WINDOW*2)rate.delete(k)},RATE_WINDOW*2).unref();
-const API_PUBLIC=(process.env.PUBLIC_API_URL||'https://streamvg-web-production.up.railway.app').replace(/\/$/,'');
 setInterval(()=>{const now=Date.now();for(const[k,v]of relayStore)if(v.expires<now)relayStore.delete(k)},60000).unref();
 const port=process.env.PORT||3000;createServer(app).listen(port,()=>console.log('StreamVG listening on '+port));
