@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+<defs>
+ <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#101923"/><stop offset=".55" stop-color="#050a10"/><stop offset="1" stop-color="#020509"/></linearGradient>
+ <linearGradient id="s" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fff"/><stop offset=".55" stop-color="#d9faff"/><stop offset="1" stop-color="#00e5d2"/></linearGradient>
+ <linearGradient id="v" x1="0" y1="0" x2=".8" y2="1"><stop stop-color="#00e9d2"/><stop offset=".48" stop-color="#00bde9"/><stop offset="1" stop-color="#0878ed"/></linearGradient>
+ <linearGradient id="edge" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#293b4a"/><stop offset="1" stop-color="#071018"/></linearGradient>
+</defs>
+<rect x="12" y="12" width="488" height="488" rx="116" fill="url(#bg)" stroke="url(#edge)" stroke-width="5"/>
+<path d="M229 174c-12-13-31-20-53-20-42 0-72 26-72 64 0 31 20 47 64 60l24 7c22 7 31 13 31 26 0 15-14 25-36 25-22 0-43-10-59-27l-40 40c23 27 58 42 99 42 51 0 87-27 87-70 0-33-19-52-64-66l-26-8c-20-6-29-12-29-23 0-12 12-20 29-20 17 0 31 6 44 18z" fill="url(#s)"/>
+<path d="M264 159h50c8 0 14 5 17 13l51 142 51-142c3-8 9-13 18-13h48c12 0 19 11 15 22l-91 245c-3 8-10 13-19 13h-43c-9 0-16-5-19-13l-92-245c-4-11 3-22 14-22z" fill="url(#v)"/>
+</svg>

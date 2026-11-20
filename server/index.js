@@ -6,7 +6,7 @@ import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
 import { mkdir, unlink, rm, stat } from 'node:fs/promises';
-import { createWriteStream } from 'node:fs';
+import { createReadStream, createWriteStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { Transform } from 'node:stream';
 import { assertPublicHost, safeRequest, readText, BlockedError } from './safe-net.js';
@@ -21,7 +21,7 @@ const app = express();
 app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS ?? 1));
 app.disable('x-powered-by');
 
-const API_PUBLIC = (process.env.PUBLIC_API_URL || 'https://streamvg-web-production.up.railway.app').replace(/\/$/, '');
+const API_PUBLIC = (process.env.PUBLIC_API_URL || 'https://streamvg-web-production-22879f12.up.railway.app').replace(/\/$/, '');
 const originCheck = createOriginCheck();
 const clientIp = req => req.ip || req.socket.remoteAddress || 'unknown';
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -228,6 +228,139 @@ app.get('/api/local-media/:token/video.mp4', cors('GET,OPTIONS', 'Range,Content-
   if (!item.remux) return res.status(404).json({ error: 'Nothing has been converted for this session yet.' });
   res.sendFile(item.remux.path, { headers: { 'Content-Type': 'video/mp4', 'Cache-Control': 'no-store' } }, err => { if (err && !res.headersSent) res.status(err.status || 500).end(); });
 });
+
+// ---- remote media: tracks of a remote file, and a source-quality / compatible HLS remux ----------
+// ffmpeg and ffprobe fetch the URL themselves, so it is validated first (every redirect hop is checked and
+// the final address must be public), only http(s) is allowed, and playlists are refused because their
+// segment URLs would be fetched by ffmpeg without these checks.
+const FFMPEG_NET = ['-protocol_whitelist', 'http,https,tcp,tls,crypto', '-rw_timeout', '30000000'];
+const MANIFEST_RE = /\.(m3u8|mpd)(?:[?#]|$)/i;
+const publicMediaUrl = async value => {
+  const text = String(value || '').trim();
+  if (!text || text.length > 8192) throw Object.assign(new Error('A valid media URL is required.'), { status: 400 });
+  let u; try { u = new URL(text); } catch { throw Object.assign(new Error('A valid media URL is required.'), { status: 400 }); }
+  if (!['http:', 'https:'].includes(u.protocol) || u.username || u.password) throw Object.assign(new Error('This media URL is not allowed.'), { status: 400 });
+  let probe;
+  try { probe = await safeRequest(u.href, { headers: { range: 'bytes=0-0', 'user-agent': 'Mozilla/5.0 StreamVG Media Probe' }, headerTimeout: 15000, maxRedirects: 5 }); }
+  catch (err) { if (err instanceof BlockedError) throw Object.assign(new Error('This media URL is not allowed.'), { status: 400 }); throw Object.assign(new Error('Could not open this media link.'), { status: 422 }); }
+  probe.stream.destroy();
+  const type = String(probe.headers['content-type'] || '').toLowerCase();
+  if (probe.status >= 400 || type.includes('text/html') || type.includes('application/json')) throw Object.assign(new Error('The media link is unavailable or expired.'), { status: 422 });
+  const final = String(probe.url || u.href);
+  if (MANIFEST_RE.test(new URL(final).pathname) || /mpegurl|dash\+xml/.test(type)) throw Object.assign(new Error('Playlists are not supported here; only direct media files.'), { status: 422 });
+  return final;
+};
+const mediaError = (res, err, fallback) => res.status(err?.status || 422).json({ error: err?.status ? err.message : fallback });
+
+const REMOTE_MEDIA_TTL = 30 * 60 * 1000;
+const remoteMediaStore = new Map();
+const remoteMediaGet = (req, res) => {
+  const item = remoteMediaStore.get(req.params.token);
+  if (!item || item.expires < Date.now()) { remoteMediaStore.delete(req.params.token); res.status(410).json({ error: 'Remote media session expired. Load the video again.' }); return null; }
+  item.expires = Date.now() + REMOTE_MEDIA_TTL;
+  return item;
+};
+app.post('/api/remote-media-session', limited(heavyLimit), cors('GET,POST,OPTIONS', 'Content-Type,Range'), async (req, res) => {
+  const release = ffmpegSlots.acquire(clientIp(req));
+  if (!release) return res.status(429).json({ error: 'Too many media scans in progress.' });
+  try {
+    const target = await publicMediaUrl(req.body?.url);
+    const { stdout } = await execFileAsync('ffprobe', ['-v', 'error', ...FFMPEG_NET, '-probesize', '100M', '-analyzeduration', '100M', '-show_streams', '-show_format', '-of', 'json', target], { timeout: 90000, maxBuffer: 20 * 1024 * 1024 });
+    const streams = Array.isArray(JSON.parse(stdout || '{}').streams) ? JSON.parse(stdout).streams : [];
+    if (!streams.some(x => x.codec_type === 'audio' || x.codec_type === 'subtitle')) return res.status(422).json({ error: 'No audio or subtitle tracks were found.' });
+    for (const [key, v] of remoteMediaStore) if (v.expires < Date.now()) remoteMediaStore.delete(key);
+    if (remoteMediaStore.size >= 200) return res.status(503).json({ error: 'The media engine is busy. Try again shortly.' });
+    const token = randomUUID();
+    remoteMediaStore.set(token, { url: target, streams, expires: Date.now() + REMOTE_MEDIA_TTL });
+    const publicStreams = streams.filter(x => x.codec_type === 'audio' || x.codec_type === 'subtitle').map(x => ({ index: x.index, codec_type: x.codec_type, codec_name: x.codec_name || '', language: x.tags?.language || x.tags?.language_ietf || '', title: x.tags?.title || x.tags?.handler_name || '', channels: x.channels || 0, channel_layout: x.channel_layout || '', sample_rate: x.sample_rate || '' }));
+    res.json({ token, expiresIn: REMOTE_MEDIA_TTL / 1000, streams: publicStreams });
+  } catch (err) {
+    console.error(JSON.stringify({ event: 'remote-media-probe-error', message: String(err?.message || err).slice(0, 240) }));
+    mediaError(res, err, 'Could not read tracks from this URL. The link may have expired or the server may not support this source.');
+  } finally { release(); }
+});
+app.get('/api/remote-audio/:token', limited(heavyLimit), cors('GET,OPTIONS', 'Range,Content-Type'), (req, res) => {
+  const item = remoteMediaGet(req, res); if (!item) return;
+  const audio = audioStreams(item), track = Number(req.query.track ?? 0), start = parseSeconds(req.query.start);
+  if (!Number.isInteger(track) || track < 0 || track >= audio.length) return res.status(400).json({ error: 'Invalid audio track.' });
+  if (!Number.isFinite(start) || start > 86400) return res.status(400).json({ error: 'Invalid audio start time.' });
+  const release = ffmpegSlots.acquire(clientIp(req));
+  if (!release) return res.status(429).json({ error: 'Too many audio conversions in progress.' });
+  const codec = String(audio[track].codec_name || '').toLowerCase();
+  const ff = spawn('ffmpeg', ['-hide_banner', '-loglevel', 'error', ...FFMPEG_NET, ...(start > 0 ? ['-ss', String(start)] : []), '-i', item.url, '-map', '0:' + audio[track].index, '-vn', '-sn', '-dn', ...(codec === 'aac' ? ['-c:a', 'copy'] : ['-c:a', 'aac', '-b:a', '384k']), '-avoid_negative_ts', 'make_zero', '-movflags', '+empty_moov+default_base_moof', '-frag_duration', '500000', '-flush_packets', '1', '-f', 'mp4', 'pipe:1'], { stdio: ['ignore', 'pipe', 'pipe'] });
+  let stderr = '';
+  ff.stderr.on('data', chunk => { stderr = (stderr + chunk).slice(-4000); });
+  ff.once('error', err => { release(); if (!res.headersSent) res.status(502).json({ error: 'Audio extraction failed' }); else res.destroy(err); });
+  ff.once('close', code => { release(); if (code !== 0 && code !== null) console.error(JSON.stringify({ event: 'remote-audio-exit', track, code, stderr: stderr.slice(-800) })); });
+  res.status(200); res.setHeader('Content-Type', 'audio/mp4'); res.setHeader('Cache-Control', 'no-store'); res.setHeader('X-StreamVG-Audio-Track', String(track));
+  ff.stdout.pipe(res);
+  res.on('close', () => { if (!ff.killed && ff.exitCode === null) ff.kill('SIGTERM'); });
+});
+app.get('/api/remote-subtitle/:token/:track', limited(heavyLimit), cors('GET,OPTIONS', 'Content-Type'), async (req, res) => {
+  const item = remoteMediaGet(req, res); if (!item) return;
+  const subs = subtitleStreams(item), track = Number(req.params.track);
+  if (!Number.isInteger(track) || track < 0 || track >= subs.length) return res.status(400).send('Invalid subtitle track.');
+  if (!TEXT_SUBTITLE_CODECS.has(String(subs[track].codec_name || '').toLowerCase())) return res.status(415).send('This subtitle is image-based and cannot be shown as text.');
+  const release = ffmpegSlots.acquire(clientIp(req));
+  if (!release) return res.status(429).send('Too many conversions in progress.');
+  try {
+    const { stdout } = await execFileAsync('ffmpeg', ['-hide_banner', '-loglevel', 'error', ...FFMPEG_NET, '-i', item.url, '-map', '0:' + subs[track].index, '-c:s', 'webvtt', '-f', 'webvtt', 'pipe:1'], { timeout: 120000, maxBuffer: 12 * 1024 * 1024, encoding: 'buffer' });
+    res.setHeader('Content-Type', 'text/vtt; charset=utf-8'); res.setHeader('Cache-Control', 'no-store'); res.send(stdout);
+  } catch { res.status(422).send('Could not convert this subtitle track.'); } finally { release(); }
+});
+
+// ---- compatibility playback: remote file -> fragmented-MP4 HLS (video copied, or re-encoded as a fallback) ----
+const COMPAT_DIR = process.env.COMPAT_DIR || '/tmp/streamvg-compat';
+const COMPAT_TTL = 60 * 60 * 1000;
+const compatSessions = new Map();
+await rm(COMPAT_DIR, { recursive: true, force: true }).catch(() => {});
+const compatDrop = async (token, item) => { compatSessions.delete(token); if (item.ff && item.exitCode === undefined) item.ff.kill('SIGTERM'); await rm(item.dir, { recursive: true, force: true }).catch(() => {}); };
+const waitForCompatPlaylist = async (job, timeoutMs = 90000) => {
+  const until = Date.now() + timeoutMs;
+  while (Date.now() < until) {
+    try { if ((await stat(path.join(job.dir, 'index.m3u8'))).size > 0) return true; } catch {}
+    if (job.exitCode !== undefined) return false;
+    await wait(250);
+  }
+  return false;
+};
+app.post('/api/compat/session', limited(heavyLimit), cors('GET,POST,OPTIONS', 'Content-Type,Range'), async (req, res) => {
+  try {
+    const mode = req.body?.mode === 'compatible' ? 'compatible' : 'original';
+    const sourceUrl = await publicMediaUrl(req.body?.url);
+    for (const [key, v] of compatSessions) if (v.expires < Date.now()) await compatDrop(key, v);
+    if (compatSessions.size >= 40) return res.status(503).json({ error: 'The media engine is busy. Try again shortly.' });
+    if (mode === 'compatible') for (const item of compatSessions.values()) if (item.url === sourceUrl && item.mode === 'original' && item.ff && item.exitCode === undefined) { const ff = item.ff; ff.kill('SIGTERM'); await new Promise(resolve => { if (item.exitCode !== undefined) return resolve(); ff.once('close', resolve); setTimeout(resolve, 1200).unref(); }); }
+    const token = randomUUID(), dir = path.join(COMPAT_DIR, token);
+    await mkdir(dir, { recursive: true });
+    compatSessions.set(token, { url: sourceUrl, dir, mode, expires: Date.now() + COMPAT_TTL, ff: null, exitCode: undefined, stderr: '' });
+    res.json({ url: API_PUBLIC + '/api/compat/' + token + '/index.m3u8', expiresIn: COMPAT_TTL / 1000 });
+  } catch (err) { mediaError(res, err, 'Could not open this media link.'); }
+});
+app.get('/api/compat/:token/:file', allowApi, async (req, res) => {
+  const item = compatSessions.get(req.params.token);
+  if (!item || item.expires < Date.now()) return res.status(410).send('Compatibility stream expired.');
+  const file = req.params.file;
+  if (!['index.m3u8', 'init.mp4'].includes(file) && !/^segment-\d{6}\.m4s$/.test(file)) return res.status(404).end();
+  if (file === 'index.m3u8' && !item.ff) {
+    if (item.mode === 'compatible' && [...compatSessions.values()].filter(x => x.mode === 'compatible' && x.ff && x.exitCode === undefined).length >= 1) return res.status(429).send('The compatibility encoder is busy. Retry shortly.');
+    const playlist = path.join(item.dir, 'index.m3u8'), segmentPattern = path.join(item.dir, 'segment-%06d.m4s');
+    // Original mode remuxes without quality changes; compatible mode is an explicit fallback for sources the browser cannot decode.
+    const codecArgs = item.mode === 'compatible' ? ['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '20', '-pix_fmt', 'yuv420p', '-threads:v', '1', '-c:a', 'aac', '-b:a', '256k', '-ac', '2'] : ['-c:v', 'copy', '-c:a', 'aac', '-b:a', '384k'];
+    const ff = spawn('ffmpeg', ['-hide_banner', '-loglevel', 'warning', '-filter_threads', '1', '-threads', '1', ...FFMPEG_NET, '-i', item.url, '-map', '0:v:0', '-map', '0:a:0?', '-sn', '-dn', ...codecArgs, '-f', 'hls', '-hls_segment_type', 'fmp4', '-hls_fmp4_init_filename', 'init.mp4', '-hls_time', '6', '-hls_list_size', '0', '-hls_flags', 'independent_segments+temp_file', '-hls_segment_filename', segmentPattern, playlist], { stdio: ['ignore', 'ignore', 'pipe'] });
+    item.ff = ff;
+    ff.stderr.on('data', chunk => { item.stderr = (item.stderr + chunk).slice(-6000); });
+    ff.once('close', (code, signal) => { item.exitCode = code ?? 1; item.exitSignal = signal; if (code !== 0 && signal !== 'SIGTERM') console.error(JSON.stringify({ event: 'compat-stream-failed', code, signal, stderr: item.stderr.slice(-1000) })); });
+    ff.once('error', err => { item.exitCode = 1; item.stderr = String(err?.message || err); });
+  }
+  if (file === 'index.m3u8' && !await waitForCompatPlaylist(item)) return res.status(503).setHeader('Retry-After', '2').send(item.exitSignal ? 'Source remux stopped (' + item.exitSignal + '). The source codec or container may not be supported.' : 'Could not create a source-quality stream from this link.');
+  const filePath = path.join(item.dir, file);
+  try { await stat(filePath); } catch { return res.status(404).end(); }
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Content-Type', file === 'index.m3u8' ? 'application/vnd.apple.mpegurl' : file === 'init.mp4' ? 'video/mp4' : 'video/iso.segment');
+  createReadStream(filePath).on('error', () => { if (!res.headersSent) res.status(404).end(); else res.destroy(); }).pipe(res);
+});
+setInterval(() => { const now = Date.now(); for (const [k, v] of remoteMediaStore) if (v.expires < now) remoteMediaStore.delete(k); for (const [k, v] of compatSessions) if (v.expires < now) compatDrop(k, v); }, 60000).unref();
 
 // ---- URL resolving ----------------------------------------------------------------------------
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'dist');

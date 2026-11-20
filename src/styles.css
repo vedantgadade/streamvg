@@ -174,3 +174,295 @@ header{height:82px;padding:0 max(18px,calc((100% - 1240px)/2));background:rgba(5
 
 .playerCard:fullscreen.controlsHidden .controls,.playerCard:fullscreen.controlsHidden .playerTopbar,.playerCard:fullscreen.controlsHidden .svFullscreenTools{opacity:0!important;visibility:hidden!important;pointer-events:none!important;transition:opacity .2s,visibility .2s}
 .playerCard:fullscreen .svFullscreenTools{transition:opacity .2s,visibility .2s}
+
+
+/* Pure black page background: preserve layout, components, and accent colours */
+html,body,:root{background:#000!important}
+.app{background:#000!important}
+.app:before,.hero:after{display:none!important}
+.heroGrid{background-image:none!important}
+.heroGrid span{display:none!important}
+
+
+/* Calm monochrome interface: keep the muted accent gradient only in hero text */
+:root{
+  --violet:#777b91;
+  --cyan:#9299a8;
+  --pink:#a0a0aa;
+  --ink:#000;
+}
+.hero h1{
+  background:linear-gradient(90deg,#d9dce4 0%,#aeb4c2 52%,#858d9d 100%)!important;
+  -webkit-background-clip:text!important;
+  background-clip:text!important;
+  color:transparent!important;
+  text-shadow:none!important;
+}
+.hero h1 em{
+  background:linear-gradient(90deg,#aeb4c2 0%,#969eae 55%,#7e8797 100%)!important;
+  -webkit-background-clip:text!important;
+  background-clip:text!important;
+  color:transparent!important;
+  text-shadow:none!important;
+}
+/* Neutral, dark buttons throughout; no purple/cyan/pink button gradients */
+button,.primary,.secondary,.icon,.mini,.quickLaunch button,.tools button,
+.controls button,.playerTopActions button,.bentoCard,.tabs button,
+.shareBox button,.resume button,.remoteCard button,.remoteModal button{
+  background:#171717!important;
+  color:#c4c7ce!important;
+  border:1px solid #303030!important;
+  box-shadow:none!important;
+}
+button:hover,.primary:hover,.secondary:hover,.quickLaunch button:hover,
+.tools button:hover,.controls button:hover,.playerTopActions button:hover{
+  background:#222!important;
+  color:#e0e2e7!important;
+  border-color:#454545!important;
+  box-shadow:none!important;
+  transform:none;
+}
+.primary,.shareBox button,.resume button,.codeActions button{
+  background:#242424!important;
+  color:#e0e2e7!important;
+  border-color:#424242!important;
+}
+.modeActive,.downloadBtn{
+  background:#292929!important;
+  color:#e0e2e7!important;
+  border-color:#484848!important;
+  box-shadow:none!important;
+}
+.brand>span{
+  background:#30343b!important;
+  box-shadow:none!important;
+}
+.headerPulse i,.nowDot,.eyebrow i{
+  background:#9b9b9b!important;
+  box-shadow:none!important;
+  animation:none!important;
+}
+.heroMeta,.hero p,.brand small,.panelHead span,.controls span,
+.toggle,.featureStrip span,.bentoIntro p,.bentoCard small{
+  color:#92959d!important;
+}
+.inputRow input,.panel select,.controls select,.shareBox input,
+.remoteCard form input{
+  background:#101010!important;
+  border-color:#303030!important;
+  color:#d0d2d7!important;
+}
+.inputRow input:focus{
+  border-color:#555!important;
+  box-shadow:0 0 0 2px rgba(255,255,255,.045)!important;
+}
+.playerCard,.panel,.bentoIntro,.bentoCard,.info{
+  background:#0b0b0b!important;
+  border-color:#242424!important;
+  box-shadow:none!important;
+}
+.controls,.playerTopbar,.tabs{
+  background:#101010!important;
+  border-color:#252525!important;
+}
+.featureStrip span{
+  background:#111!important;
+  border-color:#292929!important;
+}
+
+
+/* Deep-black player workspace: remove remaining grey surface fills */
+.app,.playerCard,.playerCard *:not(video):not(canvas),
+.panel,.wide,.videoWrap,.videoWrap video,.controls,.playerTopbar,
+.stats div,.tabs,.tabs button,.historyItem,.wide pre,
+.shareBox input,.panel input,.panel select,.controls select,
+.remoteCard,.remoteModal,.featureStrip span,.bentoCard,.bentoIntro{
+  background-color:#000!important;
+}
+.playerCard,.panel,.wide,.stats div,.historyItem,.tabs,
+.controls,.playerTopbar,.shareBox input,.panel select,.controls select{
+  border-color:#191919!important;
+  box-shadow:none!important;
+}
+.playerCard{background:#000!important}
+.videoWrap,.videoWrap video{background:#000!important}
+.controls,.playerTopbar,.tabs{background:#000!important}
+.stats div{background:#000!important;border:1px solid #181818!important}
+.panel{background:#000!important}
+.panelHead,.panel h2,.stats b,.controls,.controls span,
+.tools button,.tabs button,.historyItem,.historyItem b{
+  color:#c2c2c2!important;
+}
+.tools button,.controls button,.tabs button,.shareBox button,
+.playerTopActions button,.panel button,.historyItem{
+  background:#050505!important;
+  border-color:#202020!important;
+  color:#c5c5c5!important;
+  box-shadow:none!important;
+}
+.tools button:hover,.controls button:hover,.tabs button:hover,
+.shareBox button:hover,.playerTopActions button:hover,.panel button:hover{
+  background:#101010!important;
+  border-color:#303030!important;
+  color:#eee!important;
+}
+input[type="range"],.seek,.toggle input{accent-color:#777!important}
+input,select,textarea{
+  background:#000!important;
+  color:#ccc!important;
+  border-color:#222!important;
+}
+
+
+/* Final monochrome pass for feature cards, icon glows and remaining surfaces */
+.featureBento,.bentoIntro,.bentoCard,.bentoCard.glowCard,
+.featureStrip span,.info,footer,.quickLaunch button,
+.modeActive,.downloadBtn,.theater,.theatreAtmosphere,
+.ambientGlow,.cinemaMode,.cinemaMode .videoWrap,
+.cinemaMode .controls,.remoteOverlay,.remoteCard,.remoteModal{
+  background:#000!important;
+  background-image:none!important;
+  box-shadow:none!important;
+}
+.bentoCard:before,.bentoCard:after,.app:before,
+.ambientGlow,.theatreAtmosphere,.stageGlow{
+  display:none!important;
+  opacity:0!important;
+  background:none!important;
+  box-shadow:none!important;
+}
+.bentoCard:hover,.featureStrip span:hover,.quickLaunch button:hover{
+  background:#080808!important;
+  border-color:#292929!important;
+  box-shadow:none!important;
+  transform:none!important;
+}
+.bentoCard>svg,.bentoCard .cardArrow,.featureStrip svg,
+.featureStrip span,.quickLaunch svg,.modeActive,.downloadBtn{
+  color:#aaa!important;
+}
+.featureBento .bentoIntro,.featureBento .bentoCard,
+.featureStrip span,.info,.wide,footer{
+  border-color:#1c1c1c!important;
+}
+.playerCard,.videoWrap,.videoWrap video,.videoWrap canvas,
+.theater .videoWrap,.cinemaMode .videoWrap{
+  background:#000!important;
+  box-shadow:none!important;
+}
+.playerCard video{
+  background-color:#000!important;
+}
+.info,.about,.aboutBox{
+  background:#000!important;
+  color:#aaa!important;
+}
+footer,footer a,.info p,.info h3{
+  color:#888!important;
+}
+
+
+/* Player viewing surface: true black, with softer low-contrast controls */
+.playerCard{
+  background:#000!important;
+  border-color:#171717!important;
+  box-shadow:none!important;
+}
+.playerTopbar{
+  background:#000!important;
+  border-bottom:1px solid #151515!important;
+  color:#777!important;
+}
+.playerTopbar b{color:#a0a0a0!important}
+.playerTopbar span{color:#707070!important}
+.videoWrap{
+  background:#000!important;
+  box-shadow:none!important;
+  border-radius:0!important;
+}
+.videoWrap video{
+  background:#000!important;
+  color-scheme:dark;
+}
+.videoWrap iframe{background:#000!important}
+.controls{
+  background:#050505!important;
+  border-top:1px solid #161616!important;
+  color:#929292!important;
+  box-shadow:none!important;
+}
+.controls button,.playerTopActions button{
+  background:#090909!important;
+  border:1px solid #202020!important;
+  color:#a0a0a0!important;
+  box-shadow:none!important;
+}
+.controls button:hover,.playerTopActions button:hover{
+  background:#111!important;
+  border-color:#303030!important;
+  color:#c0c0c0!important;
+  transform:none!important;
+}
+.controls span,.controls label,.playerTopbar,
+.playerTopbar b,.playerTopbar span{
+  color:#858585!important;
+}
+.controls select{
+  background:#080808!important;
+  color:#a0a0a0!important;
+  border:1px solid #242424!important;
+}
+.controls input[type="range"]{
+  accent-color:#777!important;
+}
+.videoWrap video::-webkit-media-controls-panel{
+  background-image:linear-gradient(transparent,rgba(0,0,0,.88))!important;
+}
+.videoWrap video::-webkit-media-controls-current-time-display,
+.videoWrap video::-webkit-media-controls-time-remaining-display{
+  color:#aaa!important;
+}
+.playerCard .nowDot{
+  background:#777!important;
+  box-shadow:none!important;
+}
+.playerCard.theater,.playerCard.cinemaMode{
+  background:#000!important;
+  border-color:#111!important;
+  box-shadow:none!important;
+}
+.playerCard.theater .videoWrap,.playerCard.cinemaMode .videoWrap{
+  background:#000!important;
+  box-shadow:none!important;
+}
+
+
+/* Empty-player fix: Chromium paints an uninitialised <video> as charcoal.
+   Hide only the empty video surface so the black .videoWrap shows through.
+   Once a media src is assigned, the video becomes visible normally. */
+.videoWrap{
+  background:#000!important;
+  background-color:#000!important;
+  position:relative;
+}
+.videoWrap video:not([src]){
+  opacity:0!important;
+  background:transparent!important;
+  background-color:transparent!important;
+}
+.videoWrap:has(> video:not([src])){
+  background:#000!important;
+  background-color:#000!important;
+}
+
+
+
+/* StreamVG brand mark */
+.brand>img{display:block;width:44px;height:44px;flex:0 0 44px;object-fit:cover;border-radius:12px;border:1px solid rgba(76,206,226,.18);box-shadow:0 4px 18px rgba(0,170,220,.12)}
+.remoteCard .brand>img{width:48px;height:48px;flex-basis:48px}
+
+.streamErrorOverlay{position:absolute;z-index:8;inset:auto 5% 14%;display:grid;gap:8px;max-width:720px;margin:auto;padding:16px 20px;border:1px solid rgba(255,255,255,.16);border-radius:12px;background:rgba(10,13,20,.94);color:#f3f6fb;text-align:left;box-shadow:0 12px 42px rgba(0,0,0,.45)}.streamErrorOverlay b{font-size:14px}.streamErrorOverlay span{font-size:13px;line-height:1.5;color:#bac5d6}
+
+.streamErrorOverlay .compatibilityFallback{justify-self:start;margin-top:6px;padding:9px 13px;border:1px solid rgba(101,190,255,.5);border-radius:8px;background:#143250;color:#edf7ff;font-weight:650;cursor:pointer}.streamErrorOverlay .compatibilityFallback:disabled{opacity:.55;cursor:wait}
+
+.compatibilityNotice{position:absolute;z-index:7;top:12px;left:12px;right:12px;margin:0 auto;width:max-content;max-width:calc(100% - 24px);padding:8px 12px;border:1px solid rgba(101,190,255,.32);border-radius:8px;background:rgba(10,22,34,.88);color:#dceeff;font-size:12px;line-height:1.4;text-align:center;box-shadow:0 4px 18px rgba(0,0,0,.25)}
