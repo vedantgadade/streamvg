@@ -267,13 +267,15 @@ app.post('/api/remote-media-session', limited(heavyLimit), cors('GET,POST,OPTION
     const target = await publicMediaUrl(req.body?.url);
     const { stdout } = await execFileAsync('ffprobe', ['-v', 'error', ...FFMPEG_NET, '-probesize', '100M', '-analyzeduration', '100M', '-show_streams', '-show_format', '-of', 'json', target], { timeout: 90000, maxBuffer: 20 * 1024 * 1024 });
     const streams = Array.isArray(JSON.parse(stdout || '{}').streams) ? JSON.parse(stdout).streams : [];
-    if (!streams.some(x => x.codec_type === 'audio' || x.codec_type === 'subtitle')) return res.status(422).json({ error: 'No audio or subtitle tracks were found.' });
+    if (!streams.length) return res.status(422).json({ error: 'No media streams were found.' });
     for (const [key, v] of remoteMediaStore) if (v.expires < Date.now()) remoteMediaStore.delete(key);
     if (remoteMediaStore.size >= 200) return res.status(503).json({ error: 'The media engine is busy. Try again shortly.' });
     const token = randomUUID();
     remoteMediaStore.set(token, { url: target, streams, expires: Date.now() + REMOTE_MEDIA_TTL });
     const publicStreams = streams.filter(x => x.codec_type === 'audio' || x.codec_type === 'subtitle').map(x => ({ index: x.index, codec_type: x.codec_type, codec_name: x.codec_name || '', language: x.tags?.language || x.tags?.language_ietf || '', title: x.tags?.title || x.tags?.handler_name || '', channels: x.channels || 0, channel_layout: x.channel_layout || '', sample_rate: x.sample_rate || '' }));
-    res.json({ token, expiresIn: REMOTE_MEDIA_TTL / 1000, streams: publicStreams });
+    const v = streams.find(x => x.codec_type === 'video' && !x.disposition?.attached_pic);
+    const video = v ? { codec_name: v.codec_name || '', profile: v.profile || '', pix_fmt: v.pix_fmt || '', width: v.width || 0, height: v.height || 0 } : null;
+    res.json({ token, expiresIn: REMOTE_MEDIA_TTL / 1000, streams: publicStreams, video });
   } catch (err) {
     console.error(JSON.stringify({ event: 'remote-media-probe-error', message: String(err?.message || err).slice(0, 240) }));
     mediaError(res, err, 'Could not read tracks from this URL. The link may have expired or the server may not support this source.');

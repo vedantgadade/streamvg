@@ -58,3 +58,29 @@ export const averageColor = data => {
   for (let i = 0; i + 3 < data.length; i += 4) { r += data[i]; g += data[i + 1]; b += data[i + 2]; n++; }
   return n ? Math.round(r / n) + ',' + Math.round(g / n) + ',' + Math.round(b / n) : null;
 };
+
+/**
+ * MIME type (with a codecs string) that asks the browser whether it can decode a probed video stream, or ''
+ * when the codec is one no mainstream browser decodes (MPEG-2, VC-1, WMV, DivX/Xvid...).
+ */
+export const videoCodecMime = stream => {
+  const codec = String(stream?.codec_name || '').toLowerCase(), pix = String(stream?.pix_fmt || '');
+  const tenBit = /10|12/.test(pix);
+  switch (codec) {
+    case 'h264': return 'video/mp4; codecs="avc1.640028"';
+    case 'hevc': case 'h265': return 'video/mp4; codecs="' + (tenBit ? 'hvc1.2.4.L153.B0' : 'hvc1.1.6.L153.B0') + '"';
+    case 'vp9': return 'video/webm; codecs="' + (tenBit ? 'vp09.02.10.10' : 'vp09.00.10.08') + '"';
+    case 'av1': return 'video/mp4; codecs="' + (tenBit ? 'av01.0.08M.10' : 'av01.0.08M.08') + '"';
+    case 'vp8': return 'video/webm; codecs="vp8"';
+    case 'theora': return 'video/ogg; codecs="theora"';
+    case 'mpeg4': return 'video/mp4; codecs="mp4v.20.9"';
+    default: return '';
+  }
+};
+
+/** True when the browser (via `canPlay`, normally video.canPlayType) can decode the stream; unknown codecs count as false. */
+export const canDecodeVideo = (stream, canPlay) => {
+  const mime = videoCodecMime(stream);
+  if (!mime) return false;
+  try { return !!canPlay(mime); } catch { return true; }
+};

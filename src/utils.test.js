@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { clock, isTeraBox, srtToVtt, buildCodeSnippet, urlFromSearch, averageColor } from './utils.js';
+import { clock, isTeraBox, srtToVtt, buildCodeSnippet, urlFromSearch, averageColor, videoCodecMime, canDecodeVideo } from './utils.js';
 
 test('srtToVtt converts timestamps, header and cue indexes (regression: doubled backslashes)', () => {
   const srt = '1\r\n00:00:01,000 --> 00:00:03,500\r\nHello\r\n\r\n2\r\n00:00:04,000 --> 00:00:05,000\r\n42\r\n';
@@ -59,4 +59,17 @@ test('clock and averageColor', () => {
   assert.equal(clock(NaN), '0:00');
   assert.equal(averageColor(new Uint8ClampedArray([0, 0, 0, 255, 100, 200, 50, 255])), '50,100,25');
   assert.equal(averageColor(new Uint8ClampedArray([])), null);
+});
+
+test('video codec support check maps probed codecs to browser queries', () => {
+  assert.ok(videoCodecMime({ codec_name: 'hevc', pix_fmt: 'yuv420p10le' }).includes('hvc1.2.4'), '10-bit HEVC uses Main10');
+  assert.ok(videoCodecMime({ codec_name: 'hevc', pix_fmt: 'yuv420p' }).includes('hvc1.1.6'));
+  assert.equal(videoCodecMime({ codec_name: 'mpeg2video' }), '');
+  assert.equal(videoCodecMime({ codec_name: 'vc1' }), '');
+  const chrome = mime => (/avc1|vp09|av01|vp8/.test(mime) ? 'probably' : '');
+  assert.equal(canDecodeVideo({ codec_name: 'h264' }, chrome), true);
+  assert.equal(canDecodeVideo({ codec_name: 'hevc', pix_fmt: 'yuv420p' }, chrome), false, 'browser without HEVC');
+  assert.equal(canDecodeVideo({ codec_name: 'hevc' }, () => 'maybe'), true, 'browser with HEVC');
+  assert.equal(canDecodeVideo({ codec_name: 'mpeg2video' }, () => 'probably'), false, 'never decodable');
+  assert.equal(canDecodeVideo({ codec_name: 'h264' }, () => { throw new Error('x'); }), true, 'a failing check does not trigger a conversion');
 });
