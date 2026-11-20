@@ -46,6 +46,7 @@ export async function onRequestPost({ request, env, params }) {
   }
 
   value.pendingUrl = url;
+  value.seq = (value.seq || 0) + 1;
   await store.put(code, JSON.stringify(value), { expirationTtl: remaining });
 
   return Response.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });

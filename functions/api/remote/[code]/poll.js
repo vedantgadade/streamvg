@@ -33,7 +33,7 @@ export async function onRequestGet({ env, params }) {
     await store.put(code, JSON.stringify(value), { expirationTtl: remaining });
   }
 
-  return Response.json({ url, expiresIn: remaining }, {
+  return Response.json({ url, id: url ? value.seq || 0 : null, expiresIn: remaining }, {
     headers: { "Cache-Control": "no-store" }
   });
 }
