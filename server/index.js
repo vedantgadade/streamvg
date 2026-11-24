@@ -48,6 +48,7 @@ const remoteTranscodeStore=new Map();
 const REMOTE_TRANSCODE_DIR='/tmp/streamvg-remote';
 const REMOTE_TRANSCODE_TTL=2*60*60*1000;
 const startRemoteTranscode=async target=>{
+ if([...remoteTranscodeStore.values()].filter(x=>x.child.exitCode===undefined).length>=2)throw new Error('The media engine is busy. Try again when another conversion finishes.');
  const u=new URL(target);
  if(!['http:','https:'].includes(u.protocol)||u.username||u.password||await blockedHost(u.hostname))throw new Error('Media URL is not allowed.');
  const {stdout}=await execFileAsync('ffprobe',['-v','error','-rw_timeout','30000000','-probesize','64M','-analyzeduration','64M','-show_streams','-of','json',target],{timeout:90000,maxBuffer:12*1024*1024});
