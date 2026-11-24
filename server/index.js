@@ -367,9 +367,9 @@ app.get('/api/resolve',allowApi,async(req,res)=>{
   const final=new URL(r.url);if(await blockedHost(final.hostname))return res.status(400).json({error:'Redirect target not allowed'});
   const type=r.headers.get('content-type')||'';
   const disposition=r.headers.get('content-disposition')||'';
-  const dispositionName=disposition.match(/filename\\*=UTF-8''([^;]+)/i)?.[1]||disposition.match(/filename=["']?([^"';]+)/i)?.[1]||'';
+  const dispositionName=disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]||disposition.match(/filename=["']?([^"';]+)/i)?.[1]||'';
   let downloadName=dispositionName;try{downloadName=decodeURIComponent(dispositionName)}catch{}
-  if(/\\.(mkv|avi|mov|flv|wmv|asf|vob|rmvb?|ogm|3gp|m2ts|mts|mpeg|mpg)(?:$|[?#])/i.test(downloadName||u.pathname)){
+  if(/\.(mkv|avi|mov|flv|wmv|asf|vob|rmvb?|ogm|3gp|m2ts|mts|mpeg|mpg)(?:$|[?#])/i.test(downloadName||u.pathname)){
    await r.body?.cancel().catch(()=>{});
    const job=await startRemoteTranscode(r.url);
    return res.json({kind:'media',url:API_PUBLIC+'/api/remote-transcode/'+job.token+'/index.m3u8',contentType:'application/vnd.apple.mpegurl',source:'ffmpeg-remote-transcode',audioTracks:job.streams.filter(x=>x.codec_type==='audio').map(x=>({codec:x.codec_name,language:x.tags?.language||'',channels:x.channels||0}))});
@@ -405,7 +405,7 @@ app.get('/api/remote-transcode/:token/:file',async(req,res)=>{
  const item=remoteTranscodeGet(req.params.token);
  if(!item)return res.status(410).send('Remote transcode session expired. Resolve the media URL again.');
  const name=path.basename(req.params.file);
- if(name!==req.params.file||(!/^index\\.m3u8$/.test(name)&&!/^segment_\\d{5}\\.ts$/.test(name)))return res.status(400).send('Invalid media segment.');
+ if(name!==req.params.file||(!/^index\.m3u8$/.test(name)&&!/^segment_\d{5}\\.ts$/.test(name)))return res.status(400).send('Invalid media segment.');
  const filePath=path.join(item.dir,name);
  try{await access(filePath)}catch{return res.status(item.exitCode===undefined?503:422).send(item.stderr||'Media segment is not ready yet.')}
  res.setHeader('Access-Control-Allow-Origin','*');res.setHeader('Cache-Control','no-store');
