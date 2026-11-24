@@ -173,3 +173,12 @@ header{height:82px;padding:0 max(18px,calc((100% - 1240px)/2));background:rgba(5
 
 .playerCard:fullscreen.controlsHidden .controls,.playerCard:fullscreen.controlsHidden .playerTopbar,.playerCard:fullscreen.controlsHidden .svFullscreenTools{opacity:0!important;visibility:hidden!important;pointer-events:none!important;transition:opacity .2s,visibility .2s}
 .playerCard:fullscreen .svFullscreenTools{transition:opacity .2s,visibility .2s}
+
+/* Fullscreen control panel: readable, remote-friendly, and auto-hidden with the player controls */
+.playerCard:fullscreen .svFullscreenTools{max-width:calc(100vw - 24px);max-height:38vh;overflow:auto;box-shadow:0 8px 34px rgba(0,0,0,.42);border:1px solid rgba(255,255,255,.14)}
+.playerCard:fullscreen .svFullscreenTools label{font-size:13px;min-height:36px}
+.playerCard:fullscreen .svFullscreenTools select{min-height:34px;min-width:82px;font-size:13px}
+.playerCard:fullscreen .svFullscreenTools button{min-height:42px;min-width:92px;font-size:14px;font-weight:700;border-radius:9px}
+.playerCard:fullscreen .svFullscreenTools input[type=range]{min-width:88px}
+.playerCard:fullscreen.controlsHidden .svFullscreenTools{opacity:0;visibility:hidden;pointer-events:none}
+@media(max-width:760px){.playerCard:fullscreen .svFullscreenTools{left:8px!important;right:8px!important;bottom:8px!important;gap:7px!important;padding:8px!important;max-height:42vh}.playerCard:fullscreen .svFullscreenTools label{font-size:11px}.playerCard:fullscreen .svFullscreenTools button{min-height:40px;min-width:80px;font-size:12px}}
