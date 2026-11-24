@@ -6,7 +6,7 @@ import{fetchFile,toBlobURL}from'@ffmpeg/util';
 import{Play,Pause,Upload,Maximize,PictureInPicture,Settings,Activity,Repeat2,Camera,History,Trash2,Link2,Code2,Info,Subtitles,Sun,Moon,Volume2,Film,Sparkles,Download,Languages,QrCode,Smartphone,Send,X}from'lucide-react';
 import SitePage from './pages.jsx';
 
-const PRODUCTION_API='https://streamvg-web-production-22879f12.up.railway.app';
+const PRODUCTION_API='https://streamvg-web-production.up.railway.app';
 const API_BASE=(location.hostname.endsWith('.pages.dev')?PRODUCTION_API:(import.meta.env.VITE_API_BASE_URL||(location.hostname.endsWith('.up.railway.app')?location.origin:PRODUCTION_API))).replace(/\/$/,'');
 const HIST='streamvg-history';
 const clock=s=>{if(!Number.isFinite(s))return'0:00';const h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=Math.floor(s%60);return(h?String(h).padStart(2,'0')+':':'')+String(m).padStart(2,'0')+':'+String(x).padStart(2,'0')};
