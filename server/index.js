@@ -57,13 +57,20 @@ const startRemoteTranscode=async target=>{
  const token=randomUUID(),dir=path.join(REMOTE_TRANSCODE_DIR,token);
  await mkdir(dir,{recursive:true});
  const output=path.join(dir,'index.m3u8');
- const args=['-hide_banner','-loglevel','error','-rw_timeout','30000000','-i',target,'-map','0:v:0','-map','0:a:0?','-sn','-dn','-c:v','libx264','-preset','veryfast','-crf','23','-pix_fmt','yuv420p','-c:a','aac','-b:a','192k','-ac','2','-f','hls','-hls_time','6','-hls_list_size','0','-hls_flags','independent_segments+append_list','-hls_segment_filename',path.join(dir,'segment_%05d.ts'),output];
+ const args=['-hide_banner','-loglevel','error','-rw_timeout','30000000','-user_agent','Mozilla/5.0 StreamVG Resolver','-i',target,'-map','0:v:0','-map','0:a:0?','-sn','-dn','-c:v','libx264','-preset','veryfast','-crf','23','-pix_fmt','yuv420p','-c:a','aac','-b:a','192k','-ac','2','-f','hls','-hls_time','6','-hls_list_size','0','-hls_flags','independent_segments+append_list','-hls_segment_filename',path.join(dir,'segment_%05d.ts'),output];
  const child=spawn('ffmpeg',args,{stdio:['ignore','ignore','pipe']});
  let stderr='';child.stderr.on('data',c=>{stderr+=c.toString();if(stderr.length>8000)stderr=stderr.slice(-8000)});
  const item={token,dir,output,child,streams,stderr:'',expires:Date.now()+REMOTE_TRANSCODE_TTL};
  remoteTranscodeStore.set(token,item);
  child.once('error',e=>{item.stderr=String(e?.message||e);console.error(JSON.stringify({event:'remote-transcode-spawn-error',token,error:item.stderr}))});
  child.once('close',code=>{item.exitCode=code;item.stderr=stderr;console.log(JSON.stringify({event:'remote-transcode-finished',token,code,stderr:stderr.slice(-1600)}))});
+ let ready=false;
+ for(let attempt=0;attempt<50;attempt++){
+  try{await access(path.join(dir,'segment_00000.ts'));ready=true;break}catch{}
+  if(item.exitCode!==undefined)break;
+  await new Promise(resolve=>setTimeout(resolve,400));
+ }
+ if(!ready){child.kill('SIGTERM');remoteTranscodeStore.delete(token);await rm(dir,{recursive:true,force:true});throw new Error(item.stderr||'FFmpeg could not prepare the first playable segment.');}
  return {token,streams};
 };
 const remoteTranscodeGet=token=>{const x=remoteTranscodeStore.get(token);if(!x||x.expires<Date.now())return null;x.expires=Date.now()+REMOTE_TRANSCODE_TTL;return x};
@@ -360,6 +367,10 @@ app.get('/api/resolve',allowApi,async(req,res)=>{
   const target=req.query.url;if(!target)return res.status(400).json({error:'Missing url'});
   const u=new URL(target);
   if(!['http:','https:'].includes(u.protocol)||await blockedHost(u.hostname))return res.status(400).json({error:'URL not allowed'});
+  if((u.hostname==='pixeldrain.dev'||u.hostname==='pixeldrain.com')&&/^\/api\/file\/[A-Za-z0-9_-]+\/?$/.test(u.pathname)){
+   const job=await startRemoteTranscode(target);
+   return res.json({kind:'media',url:API_PUBLIC+'/api/remote-transcode/'+job.token+'/index.m3u8',contentType:'application/vnd.apple.mpegurl',source:'pixeldrain-ffmpeg-transcode',audioTracks:job.streams.filter(x=>x.codec_type==='audio').map(x=>({codec:x.codec_name,language:x.tags?.language||'',channels:x.channels||0}))});
+  }
   if(isTeraHost(u.hostname)){const tera=await resolveTeraExternal(target);if(tera?.url){const token=relay(tera.url,tera.headers);return res.json({...tera,url:API_PUBLIC+'/api/stream/'+token,originalUrl:tera.url,source:tera.source+'-relay'})}}
   const extracted=await runUniversalExtractor(target);
   if(extracted?.url){const token=relay(extracted.url,extracted.headers);return res.json({...extracted,url:API_PUBLIC+'/api/stream/'+token,originalUrl:extracted.url,source:extracted.source+'-relay'})}
@@ -405,7 +416,7 @@ app.get('/api/remote-transcode/:token/:file',async(req,res)=>{
  const item=remoteTranscodeGet(req.params.token);
  if(!item)return res.status(410).send('Remote transcode session expired. Resolve the media URL again.');
  const name=path.basename(req.params.file);
- if(name!==req.params.file||(!/^index\.m3u8$/.test(name)&&!/^segment_\d{5}\\.ts$/.test(name)))return res.status(400).send('Invalid media segment.');
+ if(name!==req.params.file||(!/^index\.m3u8$/.test(name)&&!/^segment_\d{5}\.ts$/.test(name)))return res.status(400).send('Invalid media segment.');
  const filePath=path.join(item.dir,name);
  try{await access(filePath)}catch{return res.status(item.exitCode===undefined?503:422).send(item.stderr||'Media segment is not ready yet.')}
  res.setHeader('Access-Control-Allow-Origin','*');res.setHeader('Cache-Control','no-store');
