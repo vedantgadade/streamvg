@@ -6,7 +6,7 @@ import { lookup } from 'node:dns/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
-import { mkdir, unlink } from 'node:fs/promises';
+import { mkdir, unlink, rm, access } from 'node:fs/promises';
 import { createWriteStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { spawn } from 'node:child_process';
@@ -44,6 +44,30 @@ app.post('/api/remote/:code/play',(req,res)=>{remoteCors(req,res);const item=rem
 
 
 const remoteMediaStore=new Map();
+const remoteTranscodeStore=new Map();
+const REMOTE_TRANSCODE_DIR='/tmp/streamvg-remote';
+const REMOTE_TRANSCODE_TTL=2*60*60*1000;
+const startRemoteTranscode=async target=>{
+ if([...remoteTranscodeStore.values()].filter(x=>x.child.exitCode===undefined).length>=2)throw new Error('The media engine is busy. Try again when another conversion finishes.');
+ const u=new URL(target);
+ if(!['http:','https:'].includes(u.protocol)||u.username||u.password||await blockedHost(u.hostname))throw new Error('Media URL is not allowed.');
+ const {stdout}=await execFileAsync('ffprobe',['-v','error','-rw_timeout','30000000','-probesize','64M','-analyzeduration','64M','-show_streams','-of','json',target],{timeout:90000,maxBuffer:12*1024*1024});
+ const streams=JSON.parse(stdout||'{}').streams||[];
+ if(!streams.some(x=>x.codec_type==='video'))throw new Error('No video stream found.');
+ const token=randomUUID(),dir=path.join(REMOTE_TRANSCODE_DIR,token);
+ await mkdir(dir,{recursive:true});
+ const output=path.join(dir,'index.m3u8');
+ const args=['-hide_banner','-loglevel','error','-rw_timeout','30000000','-i',target,'-map','0:v:0','-map','0:a:0?','-sn','-dn','-c:v','libx264','-preset','veryfast','-crf','23','-pix_fmt','yuv420p','-c:a','aac','-b:a','192k','-ac','2','-f','hls','-hls_time','6','-hls_list_size','0','-hls_flags','independent_segments+append_list','-hls_segment_filename',path.join(dir,'segment_%05d.ts'),output];
+ const child=spawn('ffmpeg',args,{stdio:['ignore','ignore','pipe']});
+ let stderr='';child.stderr.on('data',c=>{stderr+=c.toString();if(stderr.length>8000)stderr=stderr.slice(-8000)});
+ const item={token,dir,output,child,streams,stderr:'',expires:Date.now()+REMOTE_TRANSCODE_TTL};
+ remoteTranscodeStore.set(token,item);
+ child.once('error',e=>{item.stderr=String(e?.message||e);console.error(JSON.stringify({event:'remote-transcode-spawn-error',token,error:item.stderr}))});
+ child.once('close',code=>{item.exitCode=code;item.stderr=stderr;console.log(JSON.stringify({event:'remote-transcode-finished',token,code,stderr:stderr.slice(-1600)}))});
+ return {token,streams};
+};
+const remoteTranscodeGet=token=>{const x=remoteTranscodeStore.get(token);if(!x||x.expires<Date.now())return null;x.expires=Date.now()+REMOTE_TRANSCODE_TTL;return x};
+
 const REMOTE_MEDIA_TTL=30*60*1000;
 const remoteMediaGet=token=>{const item=remoteMediaStore.get(token);if(!item||item.expires<Date.now()){remoteMediaStore.delete(token);return null}item.expires=Date.now()+REMOTE_MEDIA_TTL;return item};
 const inspectRemoteMedia=async target=>{
@@ -342,6 +366,14 @@ app.get('/api/resolve',allowApi,async(req,res)=>{
   const r=await fetch(u,{redirect:'follow',headers:{'user-agent':'Mozilla/5.0 StreamVG Resolver','accept':'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'}});
   const final=new URL(r.url);if(await blockedHost(final.hostname))return res.status(400).json({error:'Redirect target not allowed'});
   const type=r.headers.get('content-type')||'';
+  const disposition=r.headers.get('content-disposition')||'';
+  const dispositionName=disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]||disposition.match(/filename=["']?([^"';]+)/i)?.[1]||'';
+  let downloadName=dispositionName;try{downloadName=decodeURIComponent(dispositionName)}catch{}
+  if(/\.(mkv|avi|mov|flv|wmv|asf|vob|rmvb?|ogm|3gp|m2ts|mts|mpeg|mpg)(?:$|[?#])/i.test(downloadName||u.pathname)){
+   await r.body?.cancel().catch(()=>{});
+   const job=await startRemoteTranscode(r.url);
+   return res.json({kind:'media',url:API_PUBLIC+'/api/remote-transcode/'+job.token+'/index.m3u8',contentType:'application/vnd.apple.mpegurl',source:'ffmpeg-remote-transcode',audioTracks:job.streams.filter(x=>x.codec_type==='audio').map(x=>({codec:x.codec_name,language:x.tags?.language||'',channels:x.channels||0}))});
+  }
   if(type.startsWith('video/')||type.includes('mpegurl')||type.includes('dash'))return res.json({kind:'media',url:r.url,contentType:type});
   if(!type.includes('html')&&!type.includes('xml'))return res.status(415).json({error:'URL did not return a web page or supported media'});
   const html=(await r.text()).slice(0,5000000);
@@ -367,6 +399,18 @@ app.get('/api/stream/:token',allowApi,async(req,res)=>{
   }
   res.status(r.status);for(const h of ['content-type','content-length','content-range','accept-ranges','cache-control']){const v=r.headers.get(h);if(v)res.setHeader(h,v)}res.setHeader('Access-Control-Allow-Origin','*');if(r.body){for await(const chunk of r.body)res.write(chunk)}res.end();
  }catch(err){res.status(502).send('Relay error: '+(err?.message||'upstream failure'))}
+});
+
+app.get('/api/remote-transcode/:token/:file',async(req,res)=>{
+ const item=remoteTranscodeGet(req.params.token);
+ if(!item)return res.status(410).send('Remote transcode session expired. Resolve the media URL again.');
+ const name=path.basename(req.params.file);
+ if(name!==req.params.file||(!/^index\.m3u8$/.test(name)&&!/^segment_\d{5}\\.ts$/.test(name)))return res.status(400).send('Invalid media segment.');
+ const filePath=path.join(item.dir,name);
+ try{await access(filePath)}catch{return res.status(item.exitCode===undefined?503:422).send(item.stderr||'Media segment is not ready yet.')}
+ res.setHeader('Access-Control-Allow-Origin','*');res.setHeader('Cache-Control','no-store');
+ res.type(name.endsWith('.m3u8')?'application/vnd.apple.mpegurl':'video/mp2t');
+ res.sendFile(filePath,err=>{if(err&&!res.headersSent)res.status(500).end('Could not serve media segment')});
 });
 
 app.get('/api/proxy',allowApi,async(req,res)=>{
@@ -409,6 +453,7 @@ const extractMedia=(html,base)=>{
 
 setInterval(()=>{const now=Date.now();for(const[token,item]of localMediaStore)if(item.expires<now)localMediaCleanup(token)},60000).unref();
 setInterval(()=>{const now=Date.now();for(const[token,item]of remoteMediaStore)if(item.expires<now)remoteMediaStore.delete(token)},60000).unref();
+setInterval(()=>{const now=Date.now();for(const[token,item]of remoteTranscodeStore)if(item.expires<now){remoteTranscodeStore.delete(token);if(!item.child.killed)item.child.kill('SIGTERM');rm(item.dir,{recursive:true,force:true}).catch(()=>{})}},60000).unref();
 setInterval(()=>{const now=Date.now();for(const[k,v]of rate)if(now-v.at>RATE_WINDOW*2)rate.delete(k)},RATE_WINDOW*2).unref();
 const API_PUBLIC=(process.env.PUBLIC_API_URL||'https://streamvg-web-production.up.railway.app').replace(/\/$/,'');
 setInterval(()=>{const now=Date.now();for(const[k,v]of relayStore)if(v.expires<now)relayStore.delete(k)},60000).unref();
